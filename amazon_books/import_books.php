@@ -784,8 +784,8 @@ elseif (is_submit_product_list()) {
 		// it should only return 1 book
 		// For each top level term, created if term does not exist,
 		// gather its child terms, adding the child terms if not exists
-		//$books = search_amazon($search, True);
-		$books = test_book_data();
+		$books = search_amazon($search, True);
+		// $books = test_book_data();
 		$book = $books[0];
 
 		// Add authors
