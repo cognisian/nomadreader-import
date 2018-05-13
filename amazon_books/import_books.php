@@ -9,6 +9,30 @@
 <link rel="stylesheet" href="<?php echo $url; ?>/css/amazon_books.css">
 
 <?php
+
+function test_book_data() {
+	return array(
+		array(
+			'isbn' 				=> '0070915520',
+			'title' 			=> 'Cabbagetown',
+			'pub_date' 		=> '20020819',
+			'desc' 				=> "Toronto's Cabbagetown in the Depression...North America's largest Anglo-Saxon slum. Ken Tilling leaves school to face the bleak prospects of the dirty thirties-where do you go, what do you do, how do you make a life for yourself when all the world offers in unemployment, poverty and uncertainty?\r\n\r\n\"As a social document, Cabbagetown is as important and revealing as either The Tin Flute or The Grapes of Wrath. Stern realism has also projected upon the pages of a whole gallery of types, lifelike and convincing. He is well fitted to hold the mirror up to human nature.\" Globe and Mail.\r\n\r\nCabbagetown was first published in an abbreviated paperback edition in 1950 and was published in its entirety in 1968.",
+			'excerpt' 		=> "Toronto's Cabbagetown in the Depression",
+			'authors' 		=> array('Hugh Garner'),
+			'images' 			=> array(
+				'large' => array(
+					'width'  => 0,
+					'height' => 0,
+					'file'	 => 'something.jpeg'
+				)
+			),
+			'location' 		=> 'Toronto, Canada',
+			'genres' 			=> 'Fiction & Literature',
+			'periods' 		=> '1960s',
+			'tags' 				=> '',
+		)
+	);
+}
 /**
  *
  */
@@ -143,9 +167,14 @@ function ui_book_title_isbn_search() {
 			<input type="file" name="amazon_isbns">
 			<input type="submit" name="submit_file" value="Lookup">
 			</h1>
+			<br />
 		</form>
 	</div>
 
+	<div class="wrap amazon_books">
+		<a class="button export-csv" href="' . admin_url('admin-post.php?action=export_books') . '">
+			EXPORT Books</a>
+	</div>
 	<br class="clear" />';
 }
 
@@ -218,6 +247,15 @@ function is_submit_product_list() {
 	return isset($_POST['submit_file']) && !empty($_POST['submit_file']) &&
 					isset($_FILES['amazon_isbns']) &&
 					!empty($_FILES['amazon_isbns']['tmp_name']);
+}
+
+/**
+ * Check if the export books button used
+ *
+ * When user wants to export th set of books into an importable CSV
+ */
+function is_submit_export() {
+	return isset($_POST['export']) && !empty($_POST['export']);
 }
 
 /**
@@ -328,25 +366,16 @@ function get_book_info_from_form() {
 			);
 
 			$tlterm_id = get_toplevel_term('authors');
-			$auth_term = get_product_terms($_POST[$authors_fldname][$isbn],
-																		 $tlterm_id);
-			$auths = $auth_term;
+			$auths = get_product_terms($_POST[$authors_fldname][$isbn], $tlterm_id);
 
 			$tlterm_id = get_toplevel_term('location');
-			$loc = explode(',', $_POST[$location_fldname][$isbn]);
-			$temp[] = trim($loc[0]);
-			if (count($loc) > 1) { $temp[] = trim($loc[1]); }
-			$loc_id = get_product_terms($temp, $tlterm_id);
-			$location = $loc_id;
+			$location = get_product_terms($_POST[$location_fldname][$isbn], $tlterm_id);
 
 			$tlterm_id = get_toplevel_term('genres');
-			$genre_id = get_product_terms($_POST[$genres_fldname][$isbn], $tlterm_id);
-			$genres = $genre_id;
+			$genres = get_product_terms($_POST[$genres_fldname][$isbn], $tlterm_id);
 
-			$periods = [];
 			$tlterm_id = get_toplevel_term('periods');
-			$period_id = get_product_terms($_POST[$periods_fldname][$isbn], $tlterm_id);
-			$periods = $period_id;
+			$periods = get_product_terms($_POST[$periods_fldname][$isbn], $tlterm_id);
 
 			$tags = [];
 			$temp = explode(',', $_POST[$tags_fldname][$isbn][0]);
@@ -490,6 +519,11 @@ function create_product_post($book = array()) {
 	);
 	$post_id = wp_insert_post($post, $wp_error);
 
+	// assigning the meta keys to the product
+	add_post_meta($post_id, 'isbn_prod', $book['isbn'], true);
+	// assigning the product type (ie affiliate link)
+	wp_set_object_terms($post_id, 'external', 'product_type');
+
 	// Assign the terms to the product
 	$link_terms = [];
 	$all_terms = array_merge($book['authors'], $book['genres'],
@@ -500,16 +534,14 @@ function create_product_post($book = array()) {
 	wp_set_object_terms($post_id, $link_terms, 'product_cat', true);
 	wp_update_term_count_now($all_terms, 'product_cat');
 
-	// TODO Update the product tags
-	$tags = explode(',', $book['tags']);
-	wp_set_post_tags($post_id, $tags, true);
+	// Update the product tags (ensure the woocommerce product_tag exists)
+	if (!taxonomy_exists('product_tag')) {
+		register_taxonomy('product_tag', 'product');
+	}
+	$res = wp_set_object_terms($post_id, $book['tags'], 'product_tag', true);
 
-	// assigning the product type (ie affiliate link)
-	wp_set_object_terms($post_id, 'external', 'product_type');
-
-	// assigning the meta keys to the product
-	add_post_meta($post_id, 'isbn_prod', $isbn, true);
-
+	// Update the WooCommerce fields (_product_url being the field controlling
+	// the URL assigned to the Buy button)
 	update_post_meta( $post_id, '_visibility', 'visible' );
 	update_post_meta( $post_id, '_stock_status', 'instock');
 	update_post_meta( $post_id, 'total_sales', '0');
@@ -578,6 +610,119 @@ function create_attachment_post($img, $parent_post = 0) {
 	return $attachment_id;
 }
 
+/**
+ * Create the book export CSV file
+ *
+ * @return str The name of the CSV export file
+ */
+function create_book_export_csv() {
+
+	$csv = [];
+	$csv[] = 'ISBN, Authors, Location, Genres, Periods, Tags';
+
+
+	// Get the list of published product posts
+	$args = array(
+		'orderby'          => 'date',
+		'order'            => 'DESC',
+		'meta_key'         => '',
+		'meta_value'       => '',
+		'post_type'        => 'product',
+		'post_status'      => 'publish',
+	);
+	$books = get_posts($args);
+
+	foreach($books as $book) {
+		$tmp = [];
+		// For each post get post meta data for ISBN
+		$isbn = get_post_meta($book->ID, 'isbn_prod', true);
+		$tmp['isbn'] = $isbn;
+
+		// For each top level term get ID
+		$auth_term_id = get_term_by('name', 'Authors', 'product_cat');
+		$loc_term_id = get_term_by('name', 'Location', 'product_cat');
+		$genres_term_id = get_term_by('name', 'Genres', 'product_cat');
+		$periods_term_id = get_term_by('name', 'Periods', 'product_cat');
+
+		// For each post get all the associated terms product_cat
+		$terms = wp_get_post_terms($book->ID, 'product_cat',
+															 array("fields" => "all"));
+		foreach ($terms as $value) {
+			// Add term names to proper CSV column
+			switch ($value->parent) {
+				case $auth_term_id->term_id:
+				  if (isset($tmp['authors'])) {
+						$tmp['authors'] .= ', ' . $value->name;
+					}
+					else {
+						$tmp['authors'] = $value->name;
+					}
+					break;
+
+				case $loc_term_id->term_id:
+					if (isset($tmp['location'])) {
+						$tmp['location'] .= ', ' . $value->name;
+					}
+					else {
+						$tmp['location'] = $value->name;
+					}
+					break;
+
+				case $genres_term_id->term_id:
+					if (isset($tmp['genres'])) {
+						$tmp['genres'] .= ', ' . $value->name;
+					}
+					else {
+						$tmp['genres'] = $value->name;
+					}
+					break;
+
+				case $periods_term_id->term_id:
+					if (isset($tmp['periods'])) {
+						$tmp['periods'] .= ', ' . $value->name;
+					}
+					else {
+						$tmp['periods'] = $value->name;
+					}
+					break;
+			}
+		}
+
+		// For each post get all the associated tags product_tag
+		$tags = wp_get_post_terms($book->ID, 'product_tag', array("fields" => "all"));
+		foreach($tags as $tag) {
+			if (isset($tmp['tags'])) {
+				$tmp['tags'] .= ', ' . $tag->name;
+			}
+			else {
+				$tmp['tags'] = $tag->name;
+			}
+		}
+
+		// Build CSV record of ISBN, Authors, Location, Genres, Periods, Tags
+		$csv_rec = '%1$s, "%2$s", "%3$s", "%4$s", "%5$s", "%6$s"';
+		$csv[] = sprintf($csv_rec, $tmp['isbn'], $tmp['authors'],$tmp['location'],
+		 								 $tmp['genres'], $tmp['periods'], $tmp['tags']);
+	}
+
+	// Build complete CSV string
+	$result = '';
+	foreach($csv as $row) {
+		$result .= $row . "\n";
+	}
+
+	header('Content-Description: Download NomadReader books');
+	header("Content-type: text/csv");
+	header("Content-Disposition: attachment; filename=nomad_books.csv");
+	header("Pragma: no-cache");
+	header("Expires: 0");
+	ob_end_clean();
+	ob_start();
+	echo $result;
+	ob_end_flush();
+	wp_redirect($plugins_url);
+}
+
 /////////////////////////////////////////////////
 // Render the appropriate UI and process SUBMITs
 /////////////////////////////////////////////////
@@ -592,12 +737,13 @@ if (is_submit_products()) {
 		$msg = '';
 		$temp = "<div class='success-msg'>Product <b>%1s</b> has been added successfully</div>";
 
-		// Add each product avoiding duplicates (isbn)
+		// Add each product avoiding duplicates (isbn)?
 		foreach ($books as $book) {
 			$post_id = create_product_post($book);
 			$attach_id = create_attachment_post($book['images'], $post_id);
 			$msg .= sprintf($temp, $book['title']);
 		}
+
 		// Print summary of what was added
 		echo $msg;
 		echo ui_book_title_isbn_search();
@@ -638,7 +784,8 @@ elseif (is_submit_product_list()) {
 		// it should only return 1 book
 		// For each top level term, created if term does not exist,
 		// gather its child terms, adding the child terms if not exists
-		$books = search_amazon($search, True);
+		//$books = search_amazon($search, True);
+		$books = test_book_data();
 		$book = $books[0];
 
 		// Add authors

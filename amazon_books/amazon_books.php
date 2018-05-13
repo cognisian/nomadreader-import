@@ -14,12 +14,20 @@ function import_books() {
 	include("import_books.php");
 }
 
+function export_books() {
+	// $url = plugins_url('amazon_books/import_books.php');
+	// echo $url;
+	include("import_books.php");
+	create_book_export_csv();
+}
 
 function import_amazon_book() {
 	add_menu_page('Amazon Books', 'Import Books', 1, 'amazon_books', 'import_books', plugins_url('amazon_books/images/icon.png'), 7 );
 }
 add_action('admin_menu', 'import_amazon_book');
 
+// Add an export action
+add_action('admin_post_export_books', 'export_books');
 
 // This will add the multiselect to all <select> with class chosen-select
 function add_chosen_jq_multiselect() {
