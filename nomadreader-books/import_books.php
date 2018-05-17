@@ -57,6 +57,7 @@ function search_amazon($search, $lookupFlag = False) {
 	$books = array();
 
 	// Set parameters for Amazon API
+	// TODO Use WP Options here
 	$amzn = new AmazonECS(AWS_API_KEY, AWS_API_SECRET_KEY, 'com', AWS_ASSOCIATE_TAG);
 	$amzn->associateTag(AWS_ASSOCIATE_TAG);
 
