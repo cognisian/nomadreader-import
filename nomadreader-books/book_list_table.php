@@ -1,4 +1,4 @@
-<<?php
+<?php
 include('class-wp-list-table.php');
 
 /**
@@ -193,6 +193,7 @@ class BookListTable extends WPListTable {
 	 */
   protected function column_images($item) {
     // Return the column contents.
+    var_dump($item);
     $fieldname = 'imgfile[' . $item['isbn'] . '][]';
     $fieldname1 = 'imgwidth[' . $item['isbn'] . '][]';
     $fieldname2 = 'imgheight[' . $item['isbn'] . '][]';
@@ -265,7 +266,7 @@ class BookListTable extends WPListTable {
     foreach($terms as $name => $attrs) {
 
       $args_main = array(
-        'parent'          => $attrs['term_id'], // query for all existing subterms
+        'parent'          => $attrs['term_id'], // query for all subterms
     		'orderby'         => 'term_group',
     		'hide_empty'      => false,
     		'hierarchical'    => 1,

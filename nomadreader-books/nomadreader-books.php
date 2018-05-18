@@ -4,7 +4,7 @@ Plugin Name: NomadReader Books
 Plugin URI: https://www.nomadreader.com/
 Description: A WordPress WooCommerce plugin to import from CSV or search and import book details from Amazon Affiliate API, manage the Amazon Affiliate API Access and affiliate tokens, and export existing books to CSV
 Version: 0.9.0
-Author: Sean Chalmers <seandchalmers@yahoo.ca>
+Author: Sean Chalmers seandchalmers@yahoo.ca
 */
 define('PLUGIN_NAME', 'nomadreader-books');
 
@@ -40,17 +40,18 @@ function nomadreader_books() {
 
 	// Main menu for NomadReader functions
 	add_menu_page('NomadReader Books', 'NomadReader', 1, 'nomadreader_books',
-		'nomadreader_init', plugins_url(PLUGIN_NAME . '/images/book.png'), 7);
+		'nomadreader_search', plugins_url(PLUGIN_NAME . '/images/book.png'), 7);
 
 	// Add the menu option to export and add the target to perform the export
 	add_submenu_page('nomadreader_books', 'NomadReader Export To CSV',
-		'Export to CSV', 1, 'nomadreader_export_books', 'ui_nomadreader_export_books');
-	add_action('admin_post_export_books', 'export_books');
+		'Export to CSV', 1, 'export_books', 'nomadreader_export_books');
+	add_action('admin_action_export_books', 'export_books');
 
 	// Add menu to update external affiliate links
 	add_submenu_page('nomadreader_books',
 		'NomadReader Update External Affiliate Links',
-		'Update Ext Affiliate Links', 1, 'nomadreader_update_ext_links', 'ui_nomadreader_update_ext_links');
+		'Update Ext Affiliate Links', 1, 'update_ext_links', 'nomadreader_update_ext_links');
+	add_action('admin_action_update_ext_links', 'update_ext_links');
 
 	// Add menu to Settings to update the Amazon tokens
  	add_options_page('NomadReader Amazon Tokens', 'NomadReader Amazon Tokens',
@@ -63,12 +64,6 @@ function nomadreader_books() {
 ///////////////////////////////////////////////////////////////////////////////
 // SUPPORT Functions
 ///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Initialize the NomadReader plugin pages and settings
- */
-function nomadreader_init() {
-}
 
 /**
  * Register the NomadReader Books plugin settings
@@ -112,18 +107,53 @@ function register_nomadreader_config() {
 		'nr_buy_button_text_cb', NR_OPT_AWS_TOKENS_GRP, NR_OPT_AFFILIATE_SECT);
 }
 
-function import_books() {
-	include("import_books.php");
+/**
+ * Show the Search/Import UI
+ */
+function nomadreader_search() {
+	include 'import_books.php';
+	// Show the UI if not processing search results
+	if (empty($_POST)) {
+		echo ui_book_title_isbn_search();
+	}
 }
 
 /**
- * Callback for when user requests a CSV export
+ * User requested export to CSV, so show the UI
+ */
+function nomadreader_export_books() {
+	include("import_books.php");
+	// Show the UI
+	echo ui_books_export_csv();
+}
+
+/**
+ * Callback for when user submits a CSV export
  */
 function export_books() {
 	include("import_books.php");
 
 	// Do the download
 	create_book_export_csv();
+}
+
+/**
+ * User requested update external links, so show the UI
+ */
+function nomadreader_update_ext_links() {
+	include("import_books.php");
+	// Show the UI
+	echo ui_books_update_ext_links();
+}
+
+/**
+ * Callback for when user submits to update external links
+ */
+function update_ext_links() {
+	include("import_books.php");
+	// Do the update
+	$count = update_external_links();
+	echo "Updated {$count} books";
 }
 
 // UI Stuff

@@ -1,9 +1,9 @@
 <?php
-	include("settings.php");
+	// include("settings.php");
 	require('book_list_table.php');
 	require('lib/AmazonECS.class.php');
 
-	$url = plugins_url('amazon_books');
+	$url = plugins_url(PLUGIN_NAME);
 ?>
 
 <link rel="stylesheet" href="<?php echo $url; ?>/css/amazon_books.css">
@@ -26,10 +26,21 @@ function test_book_data() {
 					'file'	 => 'something.jpeg'
 				)
 			),
-			'location' 		=> 'Toronto, Canada',
-			'genres' 			=> 'Fiction & Literature',
-			'periods' 		=> '1960s',
-			'tags' 				=> '',
+			'terms' => array(
+				'genres' 			=> array(
+					'term_id'			=> get_toplevel_term('genres'),
+					'subterms'		=> get_product_terms(array('Fiction & Literature'))
+				),
+				'periods' 		=> array(
+					'term_id'			=> get_toplevel_term('periods'),
+					'subterms'		=> get_product_terms(array('1960s'))
+				),
+				'location' 		=> array(
+					'term_id'			=> get_toplevel_term('location'),
+					'subterms'		=> get_product_terms(array('Toronto', 'Canada'))
+				),
+			),
+			'tags' 				=> 'Awesome',
 		)
 	);
 }
@@ -56,10 +67,19 @@ function search_amazon($search, $lookupFlag = False) {
 
 	$books = array();
 
+	// Retrieve the AWS access opions
+	$options = get_option(NR_OPT_AWS_TOKENS_CONFIG);
+	$access_key = isset($options[NR_AWS_ACCESS_TOKEN]) ?
+									$options[NR_AWS_ACCESS_TOKEN] : '';
+	$secret_key = isset($options[NR_AWS_SECRET_TOKEN]) ?
+								decrypt_stuff(base64_decode($options[NR_AWS_SECRET_TOKEN])) :
+								'';
+	$affilate_tag = isset($options[NR_AWS_AFFILIATE_TAG]) ?
+									$options[NR_AWS_AFFILIATE_TAG] : '';
+
 	// Set parameters for Amazon API
-	// TODO Use WP Options here
-	$amzn = new AmazonECS(AWS_API_KEY, AWS_API_SECRET_KEY, 'com', AWS_ASSOCIATE_TAG);
-	$amzn->associateTag(AWS_ASSOCIATE_TAG);
+	$amzn = new AmazonECS($access_key, $secret_key, 'com', $affilate_tag);
+	$amzn->associateTag($affilate_tag);
 
 	try {
 		// Select how we find books (search v lookup) based on whether it is a title or isbn
@@ -77,7 +97,8 @@ function search_amazon($search, $lookupFlag = False) {
 
 		// Amazon error
 		if (isset($response->Items->Request->Errors)) {
-			return $books;
+			return new WP_Error('AmazonECS Error', 'An error with AmazonECS ocurred');
+			// return $books;
 		}
 
 		// Lop through each returned item and build details
@@ -153,30 +174,62 @@ function search_amazon($search, $lookupFlag = False) {
 /**
  * Generate the UI to allow user to search by book title or ISBN
  */
-function ui_book_title_isbn_search() {
+function ui_books_export_csv() {
+	return '
+		<h3>Export Books to CSV</h3>
+		<div class="wrap amazon_books">
+		<form action="'.admin_url('admin.php').'" method="post"
+					name="export_books">
+			<input type="hidden" name="action" value="export_books" />
+			<input type="submit" name="submit_export" value="Export Books" />
+		</form>
+		</div>
+		<br class="clear" />
+	';
+}
 
+/**
+ * Generate the UI to allow user to search by book title or ISBN
+ */
+function ui_books_update_external_link() {
+	return '
+		<h3>Update the WooCommerce External URL and Buy Button text</h3>
+		<div class="wrap amazon_books">
+		<form action="'.admin_url('admin.php').'" method="post"
+					name="update_ext_links">
+			<input type="hidden" name="action" value="update_ext_links" />
+			<input type="submit" name="submit_upd_links" value="Update Links" />
+		</form>
+		</div>
+		<br class="clear" />
+	';
+}
+
+/**
+ * Generate the UI to allow user to search by book title or ISBN
+ */
+function ui_book_title_isbn_search() {
 	return '
 		<div class="wrap amazon_books">
 		<form action="" method="post" name="amazon_books" enctype="multipart/form-data">
 			<h1>Search Books
 			<input placeholder="Search Books In Amazon..." type="text"
 				class="wp-filter-search" name="amazon_book_name">
-			<input type="submit" name="submit" value="submit">
+			<input type="submit" name="submit_search" value="submit">
 			</h1>
+			<label for="use_test_data"> Use Test Data (no Amazon API access)</label>
+			<input type="checkbox" name="use_amzn_test_data" />
 			<br />
 			<h1>Lookup ISBNs
 			<input type="file" name="amazon_isbns">
 			<input type="submit" name="submit_file" value="Lookup">
 			</h1>
 			<br />
+			<label for="use_test_data"> Use Test Data (no Amazon API access)</label>
+			<input type="checkbox" name="use_csv_test_data" />
 		</form>
-	</div>
-
-	<div class="wrap amazon_books">
-		<a class="button export-csv" href="' . admin_url('admin-post.php?action=export_books') . '">
-			EXPORT Books</a>
-	</div>
-	<br class="clear" />';
+		</div>
+	';
 }
 
 /**
@@ -224,7 +277,7 @@ function ui_book_search_results($books) {
  * Amazon API
  */
 function is_submit_book_search() {
-	return isset($_POST['submit']) && !empty($_POST['submit']);
+	return isset($_POST['submit_search']) && !empty($_POST['submit_search']);
 }
 
 /**
@@ -234,8 +287,9 @@ function is_submit_book_search() {
  * Amazon API
  */
 function is_submit_products() {
-	return ((isset($_POST['submit_products']) && !empty($_POST['submit_products'])) ||
-				  (isset($_POST['action'][0]) && !empty($_POST['action'])));
+	return ((isset($_POST['submit_products']) &&
+					!empty($_POST['submit_products'])) &&
+				  (isset($_POST['action']) && !empty($_POST['action'])));
 }
 
 /**
@@ -256,7 +310,36 @@ function is_submit_product_list() {
  * When user wants to export th set of books into an importable CSV
  */
 function is_submit_export() {
-	return isset($_POST['export']) && !empty($_POST['export']);
+	return isset($_POST['submit_export']) && !empty($_POST['submit_export']);
+}
+
+/**
+ * Check if the update external links button used
+ *
+ * When user wants to export th set of books into an importable CSV
+ */
+function is_submit_upd_links() {
+	return isset($_POST['submit_upd_links']) && !empty($_POST['submit_upd_links']);
+}
+
+/**
+ * Check if the use test data is checked
+ *
+ * When user has selected use test data to bypass Amazon API
+ */
+function is_use_amzn_test_data() {
+	return isset($_POST['use_amzn_test_data']) &&
+					!empty($_POST['use_amzn_test_data']);
+}
+
+/**
+ * Check if the use test data is checked
+ *
+ * When user has selected use test data to bypass Amazon API
+ */
+function is_use_csv_test_data() {
+	return isset($_POST['use_csv_test_data']) &&
+					!empty($_POST['use_csv_test_data']);
 }
 
 /**
@@ -712,22 +795,63 @@ function create_book_export_csv() {
 		$result .= $row . "\n";
 	}
 
-	header('Content-Description: Download NomadReader books');
-	header("Content-type: text/csv");
-	header("Content-Disposition: attachment; filename=nomad_books.csv");
-	header("Pragma: no-cache");
-	header("Expires: 0");
-	ob_end_clean();
-	ob_start();
-	echo $result;
-	ob_end_flush();
-	wp_redirect($plugins_url);
+	if (empty($result)) {
+		header('Content-Description: Download NomadReader books');
+		header("Content-type: text/csv");
+		header("Content-Disposition: attachment; filename=nomad_books.csv");
+		header("Pragma: no-cache");
+		header("Expires: 0");
+		ob_end_clean();
+		ob_start();
+		echo $result;
+		ob_end_flush();
+
+		wp_safe_redirect(admin_url('admin.php?page=export_books'));
+		exit;
+	}
+	else {
+		echo "No books are currently set as products";
+		echo ui_books_export_csv();
+	}
+}
+
+/**
+ * Update the external links for Amazon Affiliate links using the
+ * affiliate tag
+ */
+function update_external_links() {
+	// Get the list of published product posts
+	$args = array(
+		'orderby'          => 'date',
+		'order'            => 'DESC',
+		'meta_key'         => '',
+		'meta_value'       => '',
+		'post_type'        => 'product',
+		'post_status'      => 'publish',
+	);
+	$books = get_posts($args);
+
+	$count = 0;
+
+	// For each post get post meta data for ISBN and update the
+	// external URL for the book
+	foreach($books as $book) {
+		$isbn = get_post_meta($book->ID, 'isbn_prod', true);
+
+		update_post_meta($book->ID, '_product_url',
+			"https://www.amazon.com/dp/" . $isbn . "/?tag=" . AWS_ASSOCIATE_TAG);
+		update_post_meta($book->ID, '_button_text', AMAZON_BUY_BUTTON_TEXT);
+
+		$count += 1;
+	}
+
+	return $count;
 }
 
 /////////////////////////////////////////////////
 // Render the appropriate UI and process SUBMITs
 /////////////////////////////////////////////////
-
+// var_dump($_POST);
 // Process user ACTION (list from CSV, title search or add book)
 if (is_submit_products()) {
 	// Add all selected book
@@ -754,13 +878,20 @@ if (is_submit_products()) {
 	}
 }
 else if (is_submit_book_search()) {
+
 	// Search by a book title
-	$search = get_search_terms();
-	$books = search_amazon($search);
+	if (!is_use_amzn_test_data()) {
+		$search = get_search_terms();
+		$books = search_amazon($search);
+	}
+	else {
+		$books = test_book_data();
+	}
 
 	echo ui_book_search_results($books);
 }
 elseif (is_submit_product_list()) {
+
 	// Search by book isbn from list
 	$searches = get_book_info_from_file();
 
@@ -785,7 +916,12 @@ elseif (is_submit_product_list()) {
 		// it should only return 1 book
 		// For each top level term, created if term does not exist,
 		// gather its child terms, adding the child terms if not exists
-		$books = search_amazon($search, True);
+		if (!is_use_csv_test_data()) {
+			$books = search_amazon($search, True);
+		}
+		else {
+			$books = test_book_data();
+		}
 		// $books = test_book_data();
 		$book = $books[0];
 
@@ -809,9 +945,6 @@ elseif (is_submit_product_list()) {
 	}
 
 	echo ui_book_search_results($display_books);
-}
-else {
-	echo ui_book_title_isbn_search();
 }
 
 ?>

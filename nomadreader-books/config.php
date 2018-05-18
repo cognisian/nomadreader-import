@@ -12,7 +12,7 @@ function aws_access_token_cb($args) {
     esc_attr($options[NR_AWS_ACCESS_TOKEN]) : '';
 
 	printf(
-    '<input type="text" name="%1$s" value="%2$s"
+    '<input type="text" name="%1$s" value="%2$s" size="42"
             placeholder="Your AWS Access Token" />',
     $name, $value
   );
@@ -32,7 +32,7 @@ function aws_secret_token_cb($args) {
     esc_attr($options[NR_AWS_SECRET_TOKEN]) : '';
 
 	printf(
-    '<input type="text" name="%1$s" value="%2$s"
+    '<input type="text" name="%1$s" value="%2$s" size="42"
             placeholder="Your AWS Secret Token" />',
     $name, $value
   );
