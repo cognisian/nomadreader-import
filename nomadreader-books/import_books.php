@@ -11,6 +11,11 @@
 <?php
 
 function test_book_data() {
+
+	$genres_id = get_toplevel_term('genres');
+	$periods_id = get_toplevel_term('periods');
+	$loc_id = get_toplevel_term('location');
+
 	return array(
 		array(
 			'isbn' 				=> '0070915520',
@@ -28,16 +33,19 @@ function test_book_data() {
 			),
 			'terms' => array(
 				'genres' 			=> array(
-					'term_id'			=> get_toplevel_term('genres'),
-					'subterms'		=> get_product_terms(array('Fiction & Literature'))
+					'term_id'			=> $genres_id,
+					'subterms'		=> get_product_terms(
+														array('Fiction & Literature'), $genres_id)
 				),
 				'periods' 		=> array(
-					'term_id'			=> get_toplevel_term('periods'),
-					'subterms'		=> get_product_terms(array('1960s'))
+					'term_id'			=> $periods_id,
+					'subterms'		=> get_product_terms(
+														array('1960s'), $periods_id)
 				),
 				'location' 		=> array(
-					'term_id'			=> get_toplevel_term('location'),
-					'subterms'		=> get_product_terms(array('Toronto', 'Canada'))
+					'term_id'			=> $loc_id,
+					'subterms'		=> get_product_terms(
+														array('Toronto', 'Canada'), $loc_id)
 				),
 			),
 			'tags' 				=> 'Awesome',
@@ -191,9 +199,10 @@ function ui_books_export_csv() {
 /**
  * Generate the UI to allow user to search by book title or ISBN
  */
-function ui_books_update_external_link() {
+function ui_books_update_ext_links() {
 	return '
 		<h3>Update the WooCommerce External URL and Buy Button text</h3>
+		<p>Goto Setings -> NomadReader Amazon Tokens to set the value to use</p>
 		<div class="wrap amazon_books">
 		<form action="'.admin_url('admin.php').'" method="post"
 					name="update_ext_links">
@@ -287,9 +296,10 @@ function is_submit_book_search() {
  * Amazon API
  */
 function is_submit_products() {
-	return ((isset($_POST['submit_products']) &&
-					!empty($_POST['submit_products'])) &&
-				  (isset($_POST['action']) && !empty($_POST['action'])));
+	// IF an action is present in POST could be from several different
+	// source, in this case action should contain an ISBN
+	return isset($_POST['action']) && !empty($_POST['action']) &&
+					is_numeric(substr($_POST['action'], 0, 2));
 }
 
 /**
@@ -423,66 +433,63 @@ function get_book_info_from_form() {
 
 	$books = [];
 
-	if (isset($_POST['action']) && !empty($_POST['action'])) {
+	// Given the weird POST data (it is sending all rows in table)
+	// From the action var find the ISBNs being added and use that
+	// to append to post field name to get remaining
+	foreach($_POST['action'] as $isbn) {
 
-		// Given the weird POST data (it is sending all rows in table)
-		// From the action var find the ISBNs being added and use that
-		// to append to post field name to get remaining
-		foreach($_POST['action'] as $isbn) {
+		$pub_date_fldname = 'pub_date';
+		$title_fldname = 'title';
+		$authors_fldname = 'authors';
+		$desc_fldname = 'desc';
+		$excerpt_fldname = 'excerpt';
+		$imgfile_fldname = 'imgfile';
+		$imgheight_fldname = 'imgheight';
+		$imgwidth_fldname = 'imgwidth';
+		$location_fldname = 'location';
+		$genres_fldname = 'genres';
+		$periods_fldname = 'periods';
+		$tags_fldname = 'tags';
 
-			$pub_date_fldname = 'pub_date';
-			$title_fldname = 'title';
-			$authors_fldname = 'authors';
-			$desc_fldname = 'desc';
-			$excerpt_fldname = 'excerpt';
-			$imgfile_fldname = 'imgfile';
-			$imgheight_fldname = 'imgheight';
-			$imgwidth_fldname = 'imgwidth';
-			$location_fldname = 'location';
-			$genres_fldname = 'genres';
-			$periods_fldname = 'periods';
-			$tags_fldname = 'tags';
+		$img = array(
+			'file'   => $_POST[$imgfile_fldname][$isbn][0],
+			'height' => $_POST[$imgheight_fldname][$isbn][0],
+			'width'  => $_POST[$imgwidth_fldname][$isbn][0],
+		);
 
-			$img = array(
-				'file'   => $_POST[$imgfile_fldname][$isbn][0],
-				'height' => $_POST[$imgheight_fldname][$isbn][0],
-				'width'  => $_POST[$imgwidth_fldname][$isbn][0],
-			);
+		$tlterm_id = get_toplevel_term('authors');
+		$auths = get_product_terms($_POST[$authors_fldname][$isbn], $tlterm_id);
 
-			$tlterm_id = get_toplevel_term('authors');
-			$auths = get_product_terms($_POST[$authors_fldname][$isbn], $tlterm_id);
+		$tlterm_id = get_toplevel_term('location');
+		$location = get_product_terms($_POST[$location_fldname][$isbn], $tlterm_id);
 
-			$tlterm_id = get_toplevel_term('location');
-			$location = get_product_terms($_POST[$location_fldname][$isbn], $tlterm_id);
+		$tlterm_id = get_toplevel_term('genres');
+		$genres = get_product_terms($_POST[$genres_fldname][$isbn], $tlterm_id);
 
-			$tlterm_id = get_toplevel_term('genres');
-			$genres = get_product_terms($_POST[$genres_fldname][$isbn], $tlterm_id);
+		$tlterm_id = get_toplevel_term('periods');
+		$periods = get_product_terms($_POST[$periods_fldname][$isbn], $tlterm_id);
 
-			$tlterm_id = get_toplevel_term('periods');
-			$periods = get_product_terms($_POST[$periods_fldname][$isbn], $tlterm_id);
-
-			$tags = [];
-			$temp = explode(',', $_POST[$tags_fldname][$isbn][0]);
-			foreach($temp as $tag) {
-				$tags[] = trim($tag);
-			}
-
-			$tmp_info = array(
-				'desc'		  => addslashes($_POST[$desc_fldname][$isbn][0]),
-				'pub_date'  => $_POST[$pub_date_fldname][$isbn][0],
-				'isbn'		  => $isbn,
-				'title' 	  => $_POST[$title_fldname][$isbn][0],
-				'authors'	  => $auths,
-				'images'	  => $img,
-				'excerpt'   => addslashes($_POST[$excerpt_fldname][$isbn][0]),
-				'location'  => $location,
-				'genres'    => $genres,
-				'periods'   => $periods,
-				'tags'   		=> $tags,
-			);
-
-			$books[] = $tmp_info;
+		$tags = [];
+		$temp = explode(',', $_POST[$tags_fldname][$isbn][0]);
+		foreach($temp as $tag) {
+			$tags[] = trim($tag);
 		}
+
+		$tmp_info = array(
+			'desc'		  => addslashes($_POST[$desc_fldname][$isbn][0]),
+			'pub_date'  => $_POST[$pub_date_fldname][$isbn][0],
+			'isbn'		  => $isbn,
+			'title' 	  => $_POST[$title_fldname][$isbn][0],
+			'authors'	  => $auths,
+			'images'	  => $img,
+			'excerpt'   => addslashes($_POST[$excerpt_fldname][$isbn][0]),
+			'location'  => $location,
+			'genres'    => $genres,
+			'periods'   => $periods,
+			'tags'   		=> $tags,
+		);
+
+		$books[] = $tmp_info;
 	}
 
 	return $books;
@@ -644,9 +651,18 @@ function create_product_post($book = array()) {
 	update_post_meta( $post_id, '_manage_stock', "no" );
 	update_post_meta( $post_id, '_backorders', "no" );
 	update_post_meta( $post_id, '_stock', "" );
+
+	// Load the values from wordpress options
+	$options = get_option(NR_OPT_AWS_TOKENS_CONFIG);
+
+  $value = isset($options[NR_AWS_AFFILIATE_TAG]) ?
+    				esc_attr($options[NR_AWS_AFFILIATE_TAG]) : '';
 	update_post_meta( $post_id, '_product_url',
-		"https://www.amazon.com/dp/" . $isbn . "/?tag=" . AWS_ASSOCIATE_TAG);
-	update_post_meta( $post_id, '_button_text', AMAZON_BUY_BUTTON_TEXT);
+		"https://www.amazon.com/dp/" . $book['isbn'] . "/?tag=" . $value);
+
+  $value = isset($options[NR_AMZN_BUY_BTN_TEXT]) ?
+    				esc_attr($options[NR_AMZN_BUY_BTN_TEXT]) : '';
+	update_post_meta( $post_id, '_button_text', $value);
 
 	return $post_id;
 }
@@ -773,7 +789,8 @@ function create_book_export_csv() {
 		}
 
 		// For each post get all the associated tags product_tag
-		$tags = wp_get_post_terms($book->ID, 'product_tag', array("fields" => "all"));
+		$tags = wp_get_post_terms($book->ID, 'product_tag',
+															array("fields" => "all"));
 		foreach($tags as $tag) {
 			if (isset($tmp['tags'])) {
 				$tmp['tags'] .= ', ' . $tag->name;
@@ -786,7 +803,8 @@ function create_book_export_csv() {
 		// Build CSV record of ISBN, Authors, Location, Genres, Periods, Tags
 		$csv_rec = '%1$s, "%2$s", "%3$s", "%4$s", "%5$s", "%6$s"';
 		$csv[] = sprintf($csv_rec, $tmp['isbn'], $tmp['authors'],$tmp['location'],
-		 								 $tmp['genres'], $tmp['periods'], $tmp['tags']);
+		 								 html_entity_decode($tmp['genres']), $tmp['periods'],
+										 $tmp['tags']);
 	}
 
 	// Build complete CSV string
@@ -795,7 +813,7 @@ function create_book_export_csv() {
 		$result .= $row . "\n";
 	}
 
-	if (empty($result)) {
+	if (!empty($result)) {
 		header('Content-Description: Download NomadReader books');
 		header("Content-type: text/csv");
 		header("Content-Disposition: attachment; filename=nomad_books.csv");
@@ -805,13 +823,6 @@ function create_book_export_csv() {
 		ob_start();
 		echo $result;
 		ob_end_flush();
-
-		wp_safe_redirect(admin_url('admin.php?page=export_books'));
-		exit;
-	}
-	else {
-		echo "No books are currently set as products";
-		echo ui_books_export_csv();
 	}
 }
 
@@ -820,6 +831,15 @@ function create_book_export_csv() {
  * affiliate tag
  */
 function update_external_links() {
+
+	// Load the values from wordpress options
+	$options = get_option(NR_OPT_AWS_TOKENS_CONFIG);
+
+  $aff_value = isset($options[NR_AWS_AFFILIATE_TAG]) ?
+    						esc_attr($options[NR_AWS_AFFILIATE_TAG]) : '';
+  $buy_value = isset($options[NR_AMZN_BUY_BTN_TEXT]) ?
+    						esc_attr($options[NR_AMZN_BUY_BTN_TEXT]) : '';
+
 	// Get the list of published product posts
 	$args = array(
 		'orderby'          => 'date',
@@ -832,15 +852,14 @@ function update_external_links() {
 	$books = get_posts($args);
 
 	$count = 0;
-
 	// For each post get post meta data for ISBN and update the
 	// external URL for the book
 	foreach($books as $book) {
 		$isbn = get_post_meta($book->ID, 'isbn_prod', true);
 
 		update_post_meta($book->ID, '_product_url',
-			"https://www.amazon.com/dp/" . $isbn . "/?tag=" . AWS_ASSOCIATE_TAG);
-		update_post_meta($book->ID, '_button_text', AMAZON_BUY_BUTTON_TEXT);
+			"https://www.amazon.com/dp/" . $isbn . "/?tag=" . $aff_value);
+		update_post_meta($book->ID, '_button_text', $buy_value);
 
 		$count += 1;
 	}
@@ -854,9 +873,9 @@ function update_external_links() {
 // var_dump($_POST);
 // Process user ACTION (list from CSV, title search or add book)
 if (is_submit_products()) {
+
 	// Add all selected book
 	$books = get_book_info_from_form();
-
 	if (!empty($books)) {
 
 		$msg = '';

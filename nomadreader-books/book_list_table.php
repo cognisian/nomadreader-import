@@ -193,7 +193,6 @@ class BookListTable extends WPListTable {
 	 */
   protected function column_images($item) {
     // Return the column contents.
-    var_dump($item);
     $fieldname = 'imgfile[' . $item['isbn'] . '][]';
     $fieldname1 = 'imgwidth[' . $item['isbn'] . '][]';
     $fieldname2 = 'imgheight[' . $item['isbn'] . '][]';

@@ -153,7 +153,8 @@ function update_ext_links() {
 	include("import_books.php");
 	// Do the update
 	$count = update_external_links();
-	echo "Updated {$count} books";
+	wp_redirect(admin_url('admin.php?page=update_ext_links'));
+	exit;
 }
 
 // UI Stuff
