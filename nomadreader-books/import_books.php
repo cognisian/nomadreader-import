@@ -87,8 +87,7 @@ function search_amazon($search, $lookupFlag = False) {
 
 	// Set parameters for Amazon API
 	$amzn = new AmazonECS($access_key, $secret_key, 'com', $affilate_tag);
-	$amzn->associateTag($affilate_tag);
-
+	var_dump($access_key, $secret_key, $affilate_tag);
 	try {
 		// Select how we find books (search v lookup) based on whether it is a title or isbn
 		if (!$lookupFlag) {
@@ -105,8 +104,8 @@ function search_amazon($search, $lookupFlag = False) {
 
 		// Amazon error
 		if (isset($response->Items->Request->Errors)) {
-			return new WP_Error('AmazonECS Error', 'An error with AmazonECS ocurred');
-			// return $books;
+			return new WP_Error('AmazonECS Error',
+									'An error with AmazonECS ocurred');
 		}
 
 		// Lop through each returned item and build details
@@ -170,6 +169,11 @@ function search_amazon($search, $lookupFlag = False) {
 		}
 	}
 	catch(Exception $e)	{
+		// var_dump($e);
+		// $traces = $e->getTrace();
+		// foreach($traces as $trace) {
+		// 	var_dump($trace['args']);
+		// }
 		echo $e->getMessage();
 	}
 
@@ -297,9 +301,11 @@ function is_submit_book_search() {
  */
 function is_submit_products() {
 	// IF an action is present in POST could be from several different
-	// source, in this case action should contain an ISBN
-	return isset($_POST['action']) && !empty($_POST['action']) &&
-					is_numeric(substr($_POST['action'], 0, 2));
+	// sources, in this case action should contain an an arrat of ISBN
+	// numbers which were selected by user in book list table
+	// $is_isbn = preg_match('^[0-9]{10}[0-9]{0,2}[xX]?$', $_POST['action']);
+	return isset($_POST['action']) && is_array($_POST['action']) &&
+					!empty($_POST['action']);
 }
 
 /**
@@ -357,7 +363,8 @@ function is_use_csv_test_data() {
  */
 function get_search_terms() {
 		$search = '';
-		if (isset($_POST['amazon_book_name']) && !empty($_POST['amazon_book_name'])) {
+		if (isset($_POST['amazon_book_name']) &&
+				!empty($_POST['amazon_book_name'])) {
 			$search = $_POST['amazon_book_name'];
 		}
 		return $search;
