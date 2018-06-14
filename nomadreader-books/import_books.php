@@ -219,6 +219,27 @@ function ui_books_update_ext_links() {
 }
 
 /**
+ * Generate the UI to allow user to import book info from an uploaded
+ * JSON file, or a JSON string
+ */
+function ui_books_import_json() {
+	return '
+		<h3>Import Book JSON</h3>
+		<div class="wrap amazon_books">
+		<form action="#" method="post" name="import_json_form" enctype="multipart/form-data">
+			<label for="json_string">Import JSON string</label>
+			<textarea id="json_string" name="json_string" cols="50" rows="20" placeholder="Copy & paste JSON"></textarea>
+			<br /><br />
+			<input type="file" name="json_file" >
+			<br class="clear" /><br />
+			<input type="submit" name="submit_import_json" value="Import JSON" />
+		</form>
+		</div>
+		<br class="clear" />
+	';
+}
+
+/**
  * Generate the UI to allow user to search by book title or ISBN
  */
 function ui_book_title_isbn_search() {
@@ -321,6 +342,20 @@ function is_submit_product_list() {
 }
 
 /**
+ * Check if the submit product button used
+ *
+ * When user has selected and updated a product fetched from
+ * Amazon API
+ */
+function is_submit_book_json() {
+
+	return isset($_POST['submit_import_json']) &&
+					isset($_POST['json_string']) && isset($_FILES['json_file']) &&
+					(!empty($_POST['json_string']) ||
+						!empty($_FILES['json_file']['tmp_name']));
+}
+
+/**
  * Check if the export books button used
  *
  * When user wants to export th set of books into an importable CSV
@@ -368,6 +403,37 @@ function get_search_terms() {
 			$search = $_POST['amazon_book_name'];
 		}
 		return $search;
+}
+
+/**
+ * Given a HTML form submitted JSON file/string of books, extract list of books and
+ *  add any terms and tags
+ *
+ * @return array The list of books found or empty if none found
+ */
+function get_book_info_from_json() {
+
+	// Are we parsing a file or upload json string
+	$json = '';
+	if (isset($_FILES['json_file'])) {
+		$jsonfile = $_FILES['json_file']['tmp_name'];
+		$json = json_decode(file_get_contents($jsonfile));
+	}
+	else {
+		$json = json_decode($_POST['json_string']);
+	}
+
+	$book = [];
+	if (is_array($json)) {
+		foreach($json as $json_book) {
+				$book[] = parse_json_to_book($json_book);
+		}
+	}
+	else {
+		$book[] = parse_json_to_book($json);
+	}
+
+	return $book;
 }
 
 /**
@@ -834,6 +900,73 @@ function create_book_export_csv() {
 }
 
 /**
+ * Take a JSON parsed object and convert to assoc array of values
+ *
+ * @return array Assoc array of book properties
+ * @return array Assoc array of book properties
+ */
+function parse_json_to_book($obj) {
+	$genres_id = get_toplevel_term('genres');
+	$periods_id = get_toplevel_term('periods');
+	$loc_id = get_toplevel_term('location');
+
+
+	$genres = [];
+	if (isset($obj->genres)) {
+		$genres[] = $obj->genres;
+	}
+
+	$periods = [];
+	if (isset($obj->periods)) {
+		$periods[] = $obj->periods;
+	}
+
+	$location = [];
+	if (isset($obj->country)) {
+		$location[] = $obj->country;
+	}
+	if (isset($obj->city)) {
+		$location[] = $obj->city;
+	}
+
+	$tags = '';
+	if (isset($obj->tags)) {
+		$tags = $obj->tags;
+	}
+
+	return array(
+		'isbn' 				=> $obj->isbn,
+		'title' 			=> $obj->title,
+		'pub_date' 		=> '',
+		'desc' 				=> $obj->summary,
+		'excerpt' 		=> substr($obj->title, 0, 120),
+		'authors' 		=> $obj->authors,
+		'images' 			=> array(
+			'large' => array(
+				'width'  => 0,
+				'height' => 0,
+				'file'	 => $obj->image
+			)
+		),
+		'terms' => array(
+			'genres' 			=> array(
+				'term_id'			=> $genres_id,
+				'subterms'		=> get_product_terms($genres, $genres_id)
+			),
+			'periods' 		=> array(
+				'term_id'			=> $periods_id,
+				'subterms'		=> get_product_terms($periods, $periods_id)
+			),
+			'location' 		=> array(
+				'term_id'			=> $loc_id,
+				'subterms'		=> get_product_terms($location, $loc_id)
+			),
+		),
+		'tags' 				=> $tags,
+	);
+}
+
+/**
  * Update the external links for Amazon Affiliate links using the
  * affiliate tag
  */
@@ -877,7 +1010,7 @@ function update_external_links() {
 /////////////////////////////////////////////////
 // Render the appropriate UI and process SUBMITs
 /////////////////////////////////////////////////
-// var_dump($_POST);
+var_dump($_POST);
 // Process user ACTION (list from CSV, title search or add book)
 if (is_submit_products()) {
 
@@ -971,6 +1104,22 @@ elseif (is_submit_product_list()) {
 	}
 
 	echo ui_book_search_results($display_books);
+}
+elseif (is_submit_book_json()) {
+	$books = get_book_info_from_json();
+
+	// Add each product avoiding duplicates (isbn)?
+	$msg = '';
+	foreach ($books as $book) {
+		$post_id = create_product_post($book);
+		$attach_id = create_attachment_post($book['images']['large'], $post_id);
+		$msg .= sprintf($temp, $book['title']);
+	}
+
+	// Print summary of what was added
+	echo $msg;
+	echo ui_book_title_isbn_search();
+	echo ui_books_import_json();
 }
 
 ?>
