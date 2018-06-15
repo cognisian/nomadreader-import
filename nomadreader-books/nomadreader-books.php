@@ -33,7 +33,7 @@ add_action('admin_menu', 'nomadreader_books');
 add_action('admin_init', 'register_nomadreader_config');
 
 /**
- * Entry point to create the NomadReader Books plugin options
+ * Entry point to create the NomadReader Books plugin menus
  */
 function nomadreader_books() {
 	include("config.php");
@@ -115,6 +115,7 @@ function nomadreader_search() {
 	// Show the UI if not processing search results
 	if (empty($_POST)) {
 		echo ui_book_title_isbn_search();
+		echo ui_books_import_json();
 	}
 }
 
