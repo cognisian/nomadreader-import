@@ -351,9 +351,7 @@ function is_submit_product_list() {
 function is_submit_book_json() {
 
 	return isset($_POST['submit_import_json']) &&
-					isset($_POST['json_string']) && isset($_FILES['json_file']) &&
-					(!empty($_POST['json_string']) ||
-						!empty($_FILES['json_file']['tmp_name']));
+					!empty($_FILES['json_file']['tmp_name']);
 }
 
 /**
@@ -927,11 +925,16 @@ function parse_json_to_book($obj) {
 	}
 
 	$location = [];
-	if (isset($obj->country)) {
-		$location[] = $obj->country;
+	if (isset($obj->location)) {
+		$location[] = $obj->location;
 	}
-	if (isset($obj->city)) {
-		$location[] = $obj->city;
+	else {
+		if (isset($obj->country)) {
+			$location[] = $obj->country;
+		}
+		if (isset($obj->city)) {
+			$location[] = $obj->city;
+		}
 	}
 
 	$tags = '';
