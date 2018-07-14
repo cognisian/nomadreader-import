@@ -1,0 +1,31 @@
+
+<div class="row">
+  <div class="col-md">
+    <h3>Search Books</h3>
+    <form action="<?php echo admin_url('admin-post.php')?>" method="post"
+          name="search_amazon" enctype="multipart/form-data">
+      <div class="form-group">
+        <input placeholder="Search Books In Amazon..." type="text" name="search_criteria">
+        <input type="submit" name="submit_search_amazon" value="submit">
+      </div>
+      <br />
+    </form>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md">
+    <h3>Import Book(s) from File&nbsp;&nbsp;&nbsp;&nbsp;<small>Supported formats: CSV, JSON</small></h3>
+    <form action="<?php echo admin_url('admin-post.php')?>" method="post"
+          name="import_files_form" enctype="multipart/form-data">
+        <div class="form-group">
+          <input type="hidden" name="action" value="import_files">
+          <input type="file" name="import_files[]" multiple>
+          <input type="submit" name="import_files_submit" value="Import"><br />
+          <small>Max files for upload: <?php echo $num_files_uploadable ?>
+            (<?php echo $size_files_uploadable ?>B)
+          </small>
+      </div>
+    </form>
+  </div>
+</div>

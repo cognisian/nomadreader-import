@@ -1,12 +1,19 @@
 <?php
-/*
-Plugin Name: NomadReader Books
-Plugin URI: https://www.nomadreader.com/
-Description: A WordPress WooCommerce plugin to import from CSV or search and import book details from Amazon Affiliate API, manage the Amazon Affiliate API Access and affiliate tokens, and export existing books to CSV
-Version: 0.9.0
-Author: Sean Chalmers seandchalmers@yahoo.ca
-*/
-define('PLUGIN_NAME', 'nomadreader-books');
+/**
+ * Plugin Name: NomadReader Books
+ * Plugin URI: https://www.nomadreader.com/
+ * Description: A WordPress WooCommerce plugin to import from CSV or search and
+ * import book details from Amazon Affiliate API, manage the Amazon Affiliate
+ * API Access and affiliate tokens, and export existing books to CSV
+ * Version: 1.0.0
+ * Author: Sean Chalmers seandchalmers@yahoo.ca
+ */
+
+define('PLUGIN_NAME', 'nomadreader-import');
+define('PLUGIN_URL', plugin_dir_url(__FILE__));
+define('PLUGIN_VER', '1.0.0');
+
+define('NR_MENU_SLUG', 'nomadreader-import');
 
 define('NR_AWS_TOKENS_MENU_ID', 'nr-aws-tokens');
 
@@ -32,6 +39,10 @@ define('ENC_M', 'AES-128-CBC');
 add_action('admin_menu', 'nomadreader_books');
 add_action('admin_init', 'register_nomadreader_config');
 
+// Register the form submission handlers to process:
+// 		import_file (csv and json detection required)
+add_action('admin_post_import_files', 'import_files');
+
 /**
  * Entry point to create the NomadReader Books plugin menus
  */
@@ -39,18 +50,18 @@ function nomadreader_books() {
 	include("config.php");
 
 	// Main menu for NomadReader functions
-	add_menu_page('NomadReader Books', 'NomadReader', 1, 'nomadreader_books',
-		'nomadreader_search', plugins_url(PLUGIN_NAME . '/images/book.png'), 7);
+	add_menu_page('NomadReader Books', 'NomadReader', 1, NR_MENU_SLUG,
+		'nomadreader_search', PLUGIN_URL . 'images/book.png', 7);
 
 	// Add the menu option to export and add the target to perform the export
-	add_submenu_page('nomadreader_books', 'NomadReader Export To CSV',
+	add_submenu_page(NR_MENU_SLUG, 'NomadReader Export To CSV',
 		'Export to CSV', 1, 'export_books', 'nomadreader_export_books');
 	add_action('admin_action_export_books', 'export_books');
 
 	// Add menu to update external affiliate links
-	add_submenu_page('nomadreader_books',
-		'NomadReader Update External Affiliate Links',
-		'Update Ext Affiliate Links', 1, 'update_ext_links', 'nomadreader_update_ext_links');
+	add_submenu_page(NR_MENU_SLUG, 'NomadReader Update External Affiliate Links',
+		'Update Ext Affiliate Links', 1, 'update_ext_links',
+		'nomadreader_update_ext_links');
 	add_action('admin_action_update_ext_links', 'update_ext_links');
 
 	// Add menu to Settings to update the Amazon tokens
@@ -61,11 +72,123 @@ function nomadreader_books() {
 	add_action('admin_enqueue_scripts', 'nomadreader_books_enqueue');
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// MENU Action functions
+//////////////////////////////////////////////////////////////////////////////
+/**
+ * Show the Search/Import UI
+ */
+function nomadreader_search() {
+	ob_start();
+	$num_files_uploadable = ini_get('max_file_uploads');
+	$size_files_uploadable = ini_get('post_max_size');
+	include('tpl-search-import.phtml');
+	ob_end_flush();
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// POST Target functions
+//////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Callback to handler admin POST submission to import a file
+ */
+function import_files() {
+
+	require('Book.php');
+	require('utilities.php');
+
+	if ((isset($_POST['action']) && $_POST['action'] == 'import_files') &&
+	 		(isset($_FILES['import_files']) && is_array($_FILES['import_files']) &&
+			 !empty($_FILES['import_files']))) {
+
+		$import_files = $_FILES['import_files']['tmp_name'];
+
+		$books = array();
+		foreach($import_files as $idx => $import_file) {
+
+			// Extract the book details from the given file type
+			$file_type = $_FILES['import_files']['type'][$idx];
+			if ($file_type == 'text/csv') {
+				$books = Book::parse_csv($import_file);
+			}
+			elseif ($file_type == 'application/json') {
+				$books = Book::parse_json($import_file);
+			}
+
+			// ADD to WordPress
+			foreach($books as $book) {
+
+				// Create the MAIN post
+				$post_id = create_product_post($book);
+				if (!is_wp_error($post_id)) {
+
+					// Set the WooCommerce metadata
+					create_post_metadata($post_id, $book->isbn);
+
+					// Setup data structure to associate cover image with post
+					$img = array(
+						'file' 		=> $book->cover,
+						'height'	=> 0,
+						'width'		=> 0,
+					);
+					create_attachment_post($img, $post_id);
+
+					// Create the set of term IDs, if not exist and associate
+					$genres = convert_term_names_to_term_ids($book->genres, 'genres');
+					$periods = convert_term_names_to_term_ids($book->periods, 'periods');
+					$authors = convert_term_names_to_term_ids($book->authors, 'authors');
+					// Split location on comma to get individual terms for city and country
+					$location_parts = array();
+					foreach($book->locations as $location) {
+						$parts = explode(',', $location);
+						foreach($parts as $temp) {
+							$location_parts[] = trim($temp);
+						}
+					}
+					$locations = convert_term_names_to_term_ids($location_parts, 'location');
+
+					// Create the list of term IDs for all the differrent term types
+					$all_terms = array_merge($authors, $genres, $periods, $locations);
+					create_post_object_terms($post_id, $all_terms, $book->tags);
+				}
+				else {
+					// TODO Error Processing
+				}
+			}
+		}
+	}
+
+	wp_redirect(admin_url('admin.php?page=' . PLUGIN_NAME));
+	die();
+}
+
+/**
+ * Callback to handler admin POST submission to import CSV file
+ */
+function import_json() {
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // SUPPORT Functions
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
+ * Convert array of term names into array of term_ids
+ * This will create the terms under a existing or created parent_term
+ */
+function convert_term_names_to_term_ids($terms, $parent_term = '') {
+	$parent_id = get_toplevel_term($parent_term);
+	$temp = get_product_terms($terms, $parent_id);
+	$result = array_reduce($temp, function($sum, $var) {
+		$sum[] = $var['term_id'];
+		return $sum;
+	}, array());
+
+	return $result;
+}
+
+/*
  * Register the NomadReader Books plugin settings
  */
 function register_nomadreader_config() {
@@ -107,57 +230,6 @@ function register_nomadreader_config() {
 		'nr_buy_button_text_cb', NR_OPT_AWS_TOKENS_GRP, NR_OPT_AFFILIATE_SECT);
 }
 
-/**
- * Show the Search/Import UI
- */
-function nomadreader_search() {
-	include 'import_books.php';
-	// Show the UI if not processing search results
-	if (empty($_POST)) {
-		echo ui_book_title_isbn_search();
-		echo ui_books_import_json();
-	}
-}
-
-/**
- * User requested export to CSV, so show the UI
- */
-function nomadreader_export_books() {
-	include("import_books.php");
-	// Show the UI
-	echo ui_books_export_csv();
-}
-
-/**
- * Callback for when user submits a CSV export
- */
-function export_books() {
-	include("import_books.php");
-
-	// Do the download
-	create_book_export_csv();
-}
-
-/**
- * User requested update external links, so show the UI
- */
-function nomadreader_update_ext_links() {
-	include("import_books.php");
-	// Show the UI
-	echo ui_books_update_ext_links();
-}
-
-/**
- * Callback for when user submits to update external links
- */
-function update_ext_links() {
-	include("import_books.php");
-	// Do the update
-	$count = update_external_links();
-	wp_redirect(admin_url('admin.php?page=update_ext_links'));
-	exit;
-}
-
 // UI Stuff
 
 /**
@@ -175,11 +247,6 @@ function nomadreader_books_enqueue($hook) {
 			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css');
     wp_enqueue_style('prefix_bootstrap');
 
-		// Check if we are on a page which should load the remainder of
-		// if ( 'edit.php' != $hook ) {
-    //     return;
-    // }
-		//
 		// jQuery multiselect option dropdown/search plugin
 		$url = plugins_url(PLUGIN_NAME . '/javascripts');
 		wp_register_script('amznbk_jq_chosen_js', $url . '/chosen.jquery.min.js');
@@ -188,60 +255,6 @@ function nomadreader_books_enqueue($hook) {
 		$url = plugins_url(PLUGIN_NAME . '/css');
 		wp_register_style('amznbk_jq_chosen_css', $url .'/chosen.min.css');
 		wp_enqueue_style('amznbk_jq_chosen_css');
-
-		// Add any functional JS code
-		add_action('admin_footer', 'add_jq_chosen_multiselect');
-}
-
-/**
- * Add the JavaScript to enable the jQuery Chosen (multiselect dropdown & search) plugin
- */
-function add_jq_chosen_multiselect() {
-
-	echo '<script type="text/javascript">
-		jQuery(document).ready(function() {
-
-			// Initialize the Chosen multiselect dropdown
-			var select = jQuery(".chosen-select")
-			select.each(function(i,e) {
-				var elem_id  = "#" + jQuery(e).attr("id");
-				var chosen = jQuery(elem_id).chosen(
-					{ no_results_text: "<b>Press ENTER</b> to add new entry:" }
-				);
-
-				var search_field = chosen.data("chosen").search_field;
-				jQuery(search_field).on("keyup", function(evt) {
-
-					// Get the ID of Chosen elem (<Select>) and build an ID to
-					// reference the container Chosen uses to replace <select>
-					var parent_con = chosen.siblings("#" + chosen.attr("id") + "_chosen");
-
-					// If user hits ENTER and No Results showing then insert new term
-					if (evt.which === 13 && parent_con.find("li.no-results").length > 0) {
-
-						// Insert the new option to the multiselect control
-						var option = jQuery("<option>").val(this.value).text(this.value);
-						chosen.prepend(option);
-						chosen.find(option).prop("selected", true);
-
-						// Trigger the update to refresh list of options
-						chosen.trigger("chosen:updated");
-					}
-				});
-			});
-
-			// Code for WordPress Table_List to allow bulk ops
-			jQuery("th > input[type=\'checkbox\']").click(function() {
-				var boxes = jQuery("td input[type=\'checkbox\']");
-
-				var checked = false;
-	  		if (jQuery(this).is(":checked")) {
-					checked = true;
-	  		}
-				boxes.prop("checked", checked);
-			});
-		});
-	</script>';
 }
 
 /**
