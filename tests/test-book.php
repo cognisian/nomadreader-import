@@ -189,4 +189,32 @@ class BookTest extends WP_UnitTestCase {
 
 	}
 
+	/**
+	 * Test a JSON file downloaded from Chrome Extension will populate Book
+	 */
+	public function test_create_book_from_json_web_fmt() {
+
+		$books = Book::parse_json(getcwd(). '/tests/data/test-book-web-fmt.json');
+
+		$this->assertEquals(1, count($books));
+
+		$this->assertEquals('0812985400', $books[0]->isbn);
+		$this->assertEquals(array("Washington D.C., USA"), $books[0]->locations);
+
+	}
+
+	/**
+	 * Test a JSON file created int the full detailed JSON format will populate Book
+	 */
+	public function test_create_book_from_json_city_cnty_fmt() {
+
+		$books = Book::parse_json(getcwd(). '/tests/data/test-book-city-country-fmt.json');
+
+		$this->assertEquals(1, count($books));
+
+		$this->assertEquals('000721829X', $books[0]->isbn);
+		$this->assertEquals(array("London, England"), $books[0]->locations);
+		$this->assertEquals(3.7, $books[0]->rating, 0.1);
+
+	}
 }

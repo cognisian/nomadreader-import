@@ -82,7 +82,20 @@ function nomadreader_search() {
 	ob_start();
 	$num_files_uploadable = ini_get('max_file_uploads');
 	$size_files_uploadable = ini_get('post_max_size');
-	include('tpl-search-import.phtml');
+	include('templates/tpl-search-import.phtml');
+	if (isset($_GET['msgs']) && !empty($_GET['msgs'])) {
+		$msgs = json_decode(base64_decode($_GET['msgs']));
+		if (property_exists($msgs, 'err')) {
+			foreach($msgs->err as $err_msg) {
+				include('templates/tpl-error-notice.phtml');
+			}
+		}
+		if (property_exists($msgs, 'inf')) {
+			foreach($msgs->inf as $inf_msg) {
+				include('templates/tpl-info-notice.phtml');
+			}
+		}
+	}
 	ob_end_flush();
 }
 
@@ -98,13 +111,16 @@ function import_files() {
 	require('Book.php');
 	require('utilities.php');
 
+	$messages = array();
+
+	// Make sure this is the correct operation
 	if ((isset($_POST['action']) && $_POST['action'] == 'import_files') &&
 	 		(isset($_FILES['import_files']) && is_array($_FILES['import_files']) &&
 			 !empty($_FILES['import_files']))) {
 
 		$import_files = $_FILES['import_files']['tmp_name'];
 
-		$books = array();
+		$REs = array();
 		foreach($import_files as $idx => $import_file) {
 
 			// Extract the book details from the given file type
@@ -114,6 +130,10 @@ function import_files() {
 			}
 			elseif ($file_type == 'application/json') {
 				$books = Book::parse_json($import_file);
+			}
+			else {
+				process_file_error($messages, $_FILES['import_files']['name'][$idx], $file_type);
+				break;
 			}
 
 			// ADD to WordPress
@@ -132,7 +152,10 @@ function import_files() {
 						'height'	=> 0,
 						'width'		=> 0,
 					);
-					create_attachment_post($img, $post_id);
+					$attach_id = create_attachment_post($img, $post_id);
+					if (is_wp_error($attach_id)) {
+						process_book_error($messages, $attach_id, $book->isbn, $book->title);
+					}
 
 					// Create the set of term IDs, if not exist and associate
 					$genres = convert_term_names_to_term_ids($book->genres, 'genres');
@@ -150,24 +173,30 @@ function import_files() {
 
 					// Create the list of term IDs for all the differrent term types
 					$all_terms = array_merge($authors, $genres, $periods, $locations);
-					create_post_object_terms($post_id, $all_terms, $book->tags);
+					$result = create_post_object_terms($post_id, $all_terms, $book->tags);
+					if (is_wp_error($result)) {
+						process_book_error($messages, $result, $book->isbn, $book->title);
+					}
+
+					// IF no errors then add INFO book added message
+					if (empty($messages['err'])) {
+						process_book_info($messages, $book->isbn, $book->title);
+					}
 				}
 				else {
-					// TODO Error Processing
+					// Failed to create WP post for book
+					process_book_error($messages, $post_id, $book->isbn, $book->title);
+					break;
 				}
 			}
 		}
 	}
 
-	wp_redirect(admin_url('admin.php?page=' . PLUGIN_NAME));
+	$url = add_query_arg('msgs', base64_encode(json_encode($messages)),
+					admin_url('admin.php?page=' . PLUGIN_NAME));
+	wp_redirect($url);
 	die();
-}
-
-/**
- * Callback to handler admin POST submission to import CSV file
- */
-function import_json() {
-}
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // SUPPORT Functions
@@ -186,6 +215,76 @@ function convert_term_names_to_term_ids($terms, $parent_term = '') {
 	}, array());
 
 	return $result;
+}
+
+/**
+ * Given an error and a list of previous error messages add a new message
+ * to the stack, or if it exceeds 10 messages add one generic message
+ *
+ * @param array $err_msgs		The stack of previous error messages to add this err
+ * @param string $file_name	The name of file being processed
+ * @param string $file_type	The type of file being processed
+ */
+function process_file_error(&$err_msgs, $file_name, $file_type) {
+
+	if (empty($err_msgs) || !array_key_exists('err', $err_msgs)) {
+			$err_msgs['err'] = array();
+	}
+
+	if (count($err_msgs['err']) < 10) {
+		$err_msgs['err'][] = sprintf("Could not import %s of type %s",
+													$file_name, $file_type);
+	}
+	else if (count($err_msgs['err']) == 10) {
+		$err_msgs['err'][] = sprintf("More then %d errors detected",
+													count($err_msgs['err']));
+	}
+}
+
+/**
+ * A book was successfully parsed so add to list of messages
+ *
+ * @param array $msgs				The stack of previous error messages to add this err
+ * @param string $isbn			The ISBN of the book in error
+ * @param string $title			The title of the book in error
+ */
+function process_book_info(&$msgs, $isbn, $title) {
+
+	if (empty($msgs) || !array_key_exists('inf', $msgs)) {
+			$msgs['inf'] = array();
+	}
+
+	if (count($msgs['inf']) < 10) {
+		$msgs['inf'][] = sprintf("Created post for book %s %s", $isbn, $title);
+	}
+	elseif (count($msgs['inf']) == 10) {
+		$msgs['inf'][] = sprintf("More then %d info messages", count($msgs['inf']));
+	}
+}
+
+/**
+ * Given an error and a list of previous error messages add a new message
+ * to the stack, or if it exceeds 10 messages add one generic message
+ *
+ * @param array $err_msgs		The stack of previous error messages to add this err
+ * @param WPError $error		The current error
+ * @param string $isbn			The ISBN of the book in error
+ * @param string $title			The title of the book in error
+ */
+function process_book_error(&$err_msgs, $error, $isbn, $title) {
+
+	if (empty($err_msgs) || !array_key_exists('err', $err_msgs)) {
+			$err_msgs['err'] = array();
+	}
+
+	if (count($err_msgs['err']) < 10) {
+		$err_msgs['err'][] = sprintf("Could not insert post for %s %s; %s",
+													$isbn, $title, $error->get_error_message());
+	}
+	elseif (count($err_msgs['err']) == 10) {
+		$err_msgs['err'][] = sprinf("More then {count} errors detected",
+													count($err_msgs['err']));
+	}
 }
 
 /*

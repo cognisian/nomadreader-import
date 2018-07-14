@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: NomadReader Books
+ * Module Name: NomadReader Books
  * Plugin URI: https://www.nomadreader.com/
  * Description: Collection of utility functions to process book data into a
  * WooCommerce formated product with cover images as file attachements.
@@ -143,14 +143,16 @@ function create_post_object_terms($post_id, $terms, $tags = '') {
 	wp_set_object_terms($post_id, 'external', 'product_type');
 
 	// Assign the terms to the product
-	wp_set_object_terms($post_id, $terms, 'product_cat', true);
+	$res = wp_set_object_terms($post_id, $terms, 'product_cat', true);
 	wp_update_term_count_now($all_terms, 'product_cat');
 
 	// Update the product tags (ensure the woocommerce product_tag exists)
 	if (!taxonomy_exists('product_tag')) {
 		register_taxonomy('product_tag', 'product');
 	}
-	$res = wp_set_object_terms($post_id, $book['tags'], 'product_tag', true);
+	wp_set_object_terms($post_id, $book['tags'], 'product_tag', true);
+
+	return $res;
 }
 
 /**

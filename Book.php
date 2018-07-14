@@ -54,15 +54,39 @@ class Book {
     $books = array();
 
     // Parse JSON data into indexed array
-    $json = json_decode(file_get_contents($jsonfile));
+    $json = json_decode(file_get_contents($json_file));
     if (!is_array($json)) {
       $json = array($json);
     }
     foreach($json as $book) {
+
+      // Convert the old style detailed JSON which contains separate keys
+      // for city and country
+      $locations = array();
+      if (property_exists($book, 'locations')) {
+        $locations = $book->locations;
+      }
+      elseif (property_exists($book, 'city') && property_exists($book, 'country')) {
+        $locations[] = $book->city . ', ' . $book->country;
+      }
+
+      $rating = 0.0;
+      if (property_exists($book, 'rating')) {
+        $rating = $book->rating;
+      }
+      elseif (property_exists($book, 'ratings') &&
+              property_exists($book->ratings, 'rating')) {
+          $rating = $book->ratings->rating;
+      }
+
+      $tags = '';
+      if (property_exists($book, 'tags')) {
+        $rating = $book->tags;
+      }
+
       $books[] = new Book($book->isbn, $book->title, $book->authors,
-                          $book->summary, $book->excerpt, $book->rating,
-                          $book->locations, $book->genres, $book->periods,
-                          $book->tags, $book->image);
+                          $book->summary, $rating, $locations,
+                          $book->genres, $book->periods, $tags,$book->image);
     }
 
     return $books;
