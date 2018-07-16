@@ -64,7 +64,7 @@ function get_toplevel_term($termname = '') {
  * @param int $parent_term_id The parent term of the list of $terms
  * @return array A list of struct with term id, term_taxonomy_id and term_name
  */
-function get_product_terms($terms = array(), $parent_term_id) {
+function get_product_terms($terms, $parent_term_id) {
 
 	$product_terms = array();
 
@@ -137,7 +137,7 @@ function create_product_post($book) {
  * @param array $terms  The array of term IDs to associate
  * @param string $tags  A string of tags to associate
  */
-function create_post_object_terms($post_id, $terms, $tags = '') {
+function create_post_object_terms($post_id, $terms, $tags = '', $rating = 0.0) {
 
   // assigning the product type (ie affiliate link)
 	wp_set_object_terms($post_id, 'external', 'product_type');
@@ -151,6 +151,11 @@ function create_post_object_terms($post_id, $terms, $tags = '') {
 		register_taxonomy('product_tag', 'product');
 	}
 	wp_set_object_terms($post_id, $book['tags'], 'product_tag', true);
+	
+	// Set Rating
+	$woo_rating = (int)$rating;
+	$woo_stars = 'rated-'.$woo_rating;
+	wp_set_object_terms($post_id, $woo_stars, 'product_visibility', true);
 
 	return $res;
 }
@@ -215,7 +220,7 @@ function create_attachment_post($img, $parent_post = 0) {
 	$attachment = array(
 		'post_status' => "inherit",
 		'post_title' => preg_replace('/\.[^.]+$/', '', basename($img['file'])),
-		// 'post_parent' => $parent_post,
+		'post_parent' => $parent_post,
 		'post_mime_type' => 'image/jpeg',
 		'guid' => $img['file'],
 	);
@@ -236,6 +241,45 @@ function create_attachment_post($img, $parent_post = 0) {
 	add_post_meta($parent_post, '_thumbnail_id', $attachment_id, true);
 
 	return $attachment_id;
+}
+
+/**
+ * Convert array of term names into array of term_ids
+ * This will create the terms under a existing or created parent_term
+ */
+function convert_term_names_to_term_ids($terms, $parent_term = '') {
+	$parent_id = get_toplevel_term($parent_term);
+	$temp = get_product_terms($terms, $parent_id);
+	$result = array_reduce($temp, function($sum, $var) {
+		$sum[] = $var['term_id'];
+		return $sum;
+	}, array());
+
+	return $result;
+}
+
+/**
+ * Get the subterm names for given parent term
+ * 
+ * @param int $post_id			  The post_id whose term names are to be retrieved
+ * @param string $parent_term	The top level term to get its sub termnames
+ * @param array	 							The subterm names for parent term
+ */
+function get_book_term_names($post_id, $parent_term = '') {
+	
+	$parent_id = get_toplevel_term($parent_term);
+	$terms = get_the_terms($post_id, 'product_cat');
+	// Remove any terms not related to parent_term
+	$result = array_filter((array)$terms, function($val) use ($parent_id) {
+		return ($val->parent == $parent_id);
+	});
+	// Remove all other term attributes
+	$result = array_reduce($result, function($sum, $var) {
+		$sum[] = $var->name;
+		return $sum;
+	}, array());
+	
+	return $result;
 }
 
 ?>
