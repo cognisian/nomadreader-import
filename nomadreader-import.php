@@ -39,10 +39,10 @@ define('ENC_M', 'AES-128-CBC');
 add_action('admin_menu', 'nomadreader_books');
 add_action('admin_init', 'register_nomadreader_config');
 
-// Register the form submission handlers to process:
-// 		import_file (csv and json detection required)
+// Register the form submission handlers
 add_action('admin_post_import_files', 'import_files');
 add_action('admin_post_export_books', 'export_books');
+add_action('admin_post_update_ext_links', 'update_ext_links');
 
 /**
  * Entry point to create the NomadReader Books plugin menus
@@ -130,7 +130,7 @@ function nomadreader_export_books() {
 function nomadreader_update_ext_links() {
 
 	ob_start();
-		include('templates/tpl-update-links.phtml');
+		include('templates/tpl-update-ext-links.phtml');
 		if (isset($_GET['msgs']) && !empty($_GET['msgs'])) {
 			$msgs = json_decode(base64_decode($_GET['msgs']));
 			if (property_exists($msgs, 'err')) {
@@ -177,7 +177,7 @@ function export_books() {
 		$file_mime = 'application/json';
 	}
 	else {
-		add_error($messages, 'Missing expected export type.');
+		add_error($msgs, 'Missing expected export type.');
 	}
 	$file_name = 'nomadreader-books' . $file_type;
 
@@ -306,95 +306,145 @@ function import_files() {
 	require('utilities.php');
 
 	$msgs = array();
+	$books = array();
 
 	// Make sure this is the correct operation
-	if ((isset($_POST['action']) && $_POST['action'] == 'import_files') &&
-	 		(isset($_FILES['import_files']) && is_array($_FILES['import_files']) &&
-			 !empty($_FILES['import_files']))) {
+	if (isset($_POST['action']) && $_POST['action'] == 'import_files' &&
+	 		 isset($_FILES['import_files']['tmp_name'])) {
 
 		$import_files = $_FILES['import_files']['tmp_name'];
+		if (count(isset($import_files) > 0) && !empty($import_files[0])) {
+			foreach($import_files as $idx => $import_file) {
 
-		$REs = array();
-		foreach($import_files as $idx => $import_file) {
-
-			// Extract the book details from the given file type
-			$file_type = $_FILES['import_files']['type'][$idx];
-			if ($file_type == 'text/csv') {
-				$books = Book::parse_csv($import_file);
-			}
-			elseif ($file_type == 'application/json') {
-				$books = Book::parse_json($import_file);
-			}
-			else {
-				add_error($msgs, "Unable to import %s of type %s",
-									array($_FILES['import_files']['name'][$idx], $file_type));
-				break;
-			}
-
-			// ADD to WordPress
-			foreach($books as $book) {
-
-				// Create the MAIN post
-				$post_id = create_product_post($book);
-				if (!is_wp_error($post_id)) {
-
-					// Set the WooCommerce metadata
-					create_post_metadata($post_id, $book->isbn);
-
-					// Setup data structure to associate cover image with post
-					$img = array(
-						'file' 		=> $book->cover,
-						'height'	=> 0,
-						'width'		=> 0,
-					);
-					$attach_id = create_attachment_post($img, $post_id);
-					if (is_wp_error($attach_id)) {
-						add_error($msgs, "Could not insert attachment post for %s %s; %s",
-											array($book->isbn, $book->title, $attach_id->get_error_message()));
-					}
-
-					// Create the set of term IDs, if not exist and associate
-					$genres = convert_term_names_to_term_ids($book->genres, 'genres');
-					$periods = convert_term_names_to_term_ids($book->periods, 'periods');
-					$authors = convert_term_names_to_term_ids($book->authors, 'authors');
-					// Split location on comma to get individual terms for city and country
-					$location_parts = array();
-					foreach($book->locations as $location) {
-						$parts = explode(',', $location);
-						foreach($parts as $temp) {
-							$location_parts[] = trim($temp);
-						}
-					}
-					$locations = convert_term_names_to_term_ids($location_parts, 'location');
-
-					// Create the list of term IDs for all the differrent term types
-					$all_terms = array_merge($authors, $genres, $periods, $locations);
-					$result = create_post_object_terms($post_id, $all_terms, $book->tags);
-					if (is_wp_error($result)) {
-						add_error($msgs, "Could not create/assoc terms for %s %s; %s",
-											array($book->isbn, $book->title, $result->get_error_message()));
-					}
-
-					// If no errors then add INFO book added message
-					if (empty($messages['err'])) {
-						add_notice($msgs, "Added book %s %s", array($book->isbn, $book->title));
-					}
+				// Extract the book details from the given file type
+				$file_type = $_FILES['import_files']['type'][$idx];
+				if ($file_type == 'text/csv') {
+					$books = Book::parse_csv($import_file);
+				}
+				elseif ($file_type == 'application/json') {
+					$books = Book::parse_json($import_file);
 				}
 				else {
-					// Failed to create WP post for book
-					add_error($msgs, "Could not create Book product post for %s %s; %s",
-										array($book->isbn, $book->title, $post_id->get_error_message()));
+					add_error($msgs, "Unable to import %s of type %s",
+										array($_FILES['import_files']['name'][$idx], $file_type));
 					break;
+				}
+
+				// ADD to WordPress
+				foreach($books as $book) {
+
+					// Create the MAIN post
+					$post_id = create_product_post($book);
+					if (!is_wp_error($post_id)) {
+
+						// Set the WooCommerce metadata
+						create_post_metadata($post_id, $book->isbn);
+
+						// Setup data structure to associate cover image with post
+						$img = array(
+							'file' 		=> $book->cover,
+							'height'	=> 0,
+							'width'		=> 0,
+						);
+						$attach_id = create_attachment_post($img, $post_id);
+						if (is_wp_error($attach_id)) {
+							add_error($msgs, "Could not insert attachment post for %s %s; %s",
+												array($book->isbn, $book->title, $attach_id->get_error_message()));
+						}
+
+						// Create the set of term IDs, if not exist and associate
+						$genres = convert_term_names_to_term_ids($book->genres, 'genres');
+						$periods = convert_term_names_to_term_ids($book->periods, 'periods');
+						$authors = convert_term_names_to_term_ids($book->authors, 'authors');
+						// Split location on comma to get individual terms for city and country
+						$location_parts = array();
+						foreach($book->locations as $location) {
+							$parts = explode(',', $location);
+							foreach($parts as $temp) {
+								$location_parts[] = trim($temp);
+							}
+						}
+						$locations = convert_term_names_to_term_ids($location_parts, 'location');
+
+						// Create the list of term IDs for all the differrent term types
+						$all_terms = array_merge($authors, $genres, $periods, $locations);
+						$result = create_post_object_terms($post_id, $all_terms, $book->tags);
+						if (is_wp_error($result)) {
+							add_error($msgs, "Could not create/assoc terms for %s %s; %s",
+												array($book->isbn, $book->title, $result->get_error_message()));
+						}
+
+						// If no errors then add INFO book added message
+						if (empty($msgs['err'])) {
+							add_notice($msgs, "Added book %s %s", array($book->isbn, $book->title));
+						}
+					}
+					else {
+						// Failed to create WP post for book
+						add_error($msgs, "Could not create Book product post for %s %s; %s",
+											array($book->isbn, $book->title, $post_id->get_error_message()));
+						break;
+					}
 				}
 			}
 		}
+		else {
+			add_error($msgs, "No Import File specified");
+		}
 	}
 
-	$url = add_query_arg('msgs', base64_encode(json_encode($messages)),
+	$url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
 					admin_url('admin.php?page=' . PLUGIN_NAME));
 	wp_redirect($url);
 	die();
 };
+
+/**
+ * Update the Affiliate external link URL to use on Buy button
+ */
+function update_ext_links() {
+
+	$msgs = array();
+	$count = 0;
+
+	// Load the values from wordpress options
+	$options = get_option(NR_OPT_AWS_TOKENS_CONFIG);
+
+  $aff_value = isset($options[NR_AWS_AFFILIATE_TAG]) ?
+    						esc_attr($options[NR_AWS_AFFILIATE_TAG]) : '';
+  $buy_value = isset($options[NR_AMZN_BUY_BTN_TEXT]) ?
+    						esc_attr($options[NR_AMZN_BUY_BTN_TEXT]) : '';
+
+	// Get the list of published product posts
+	$args = array(
+		'orderby'          => 'date',
+		'order'            => 'DESC',
+		'post_type'        => 'product',
+		'post_status'      => 'publish',
+	);
+	$books = get_posts($args);
+	if (!is_wp_error($books)) {
+		// For each post get post meta data for ISBN and update the
+		// external URL for the book
+		foreach($books as $book) {
+			$isbn = get_post_meta($book->ID, 'isbn_prod', true);
+
+			update_post_meta($book->ID, '_product_url',
+				"https://www.amazon.com/dp/" . $isbn . "/?tag=" . $aff_value);
+			update_post_meta($book->ID, '_button_text', $buy_value);
+
+			$count += 1;
+		}
+	}
+	else {
+		add_error($msgs, "Unable to load posts: %s", array($books->get_error_message()));
+	}
+
+	$url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
+					admin_url('admin.php?page=update_ext_links'));
+	wp_redirect($url);
+	die();
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // SUPPORT Functions
@@ -422,8 +472,8 @@ function convert_term_names_to_term_ids($terms, $parent_term = '') {
  * @param string $notice			The notice message in sprintf format
  * @param array $notice_parms	The array of parameters to insert into $notice
  */
-function add_notice(&$msgs, $notice, $notic_parms=array()) {
-	process_message($msgs, $notice, $notic_parms, 'inf');
+function add_notice(&$msgs, $notice, $notice_parms=array()) {
+	process_message($msgs, $notice, $notice_parms, 'inf');
 }
 
 /**
@@ -433,8 +483,8 @@ function add_notice(&$msgs, $notice, $notic_parms=array()) {
  * @param string $notice			The notice message in sprintf format
  * @param array $notice_parms	The array of parameters to insert into $notice
  */
-function add_error(&$msgs, $notice, $notic_parms=array()) {
-	process_message($msgs, $notice, $notic_parms, 'err');
+function add_error(&$msgs, $notice, $notice_parms=array()) {
+	process_message($msgs, $notice, $notice_parms, 'err');
 }
 
 /**
@@ -445,7 +495,7 @@ function add_error(&$msgs, $notice, $notic_parms=array()) {
  * @param array $notice_parms	The array of parameters to insert into $notice
  * @param string $type				Type of message, either 'err' or 'inf'
  */
-function process_message(&$msgs, $notice, $notic_parms, $type='err') {
+function process_message(&$msgs, $notice, $notice_parms, $type='err') {
 
 	if (empty($msgs) || !array_key_exists($type, $msgs)) {
 			$msgs[$type] = array();
@@ -454,18 +504,19 @@ function process_message(&$msgs, $notice, $notic_parms, $type='err') {
 	if (count($msgs[$type]) < 10) {
 		$msgs[$type][] = vsprintf($notice, $notice_parms);
 	}
-	elseif (count($msgs[$type]) == 10) {
-		$msgs[$type][] = vsprintf("More than %d info messages", count($msgs[$type]));
-	}
 	else {
 		// Replace last messaage with updated messages count
 		$curr = count($msgs[$type]);
 
 		$match = array();
-		preg_match('/d+/', $msgs[$type][$curr - 1], $match);
-		$curr_count = $match[0];
-		if (is_int($curr_count)) {
-			$msgs[$type][$curr - 1] = sprintf("More than %d info messages", $curr_count + 1);
+		$res = preg_match('/^\d+/', $msgs[$type][$curr - 1], $match);
+		if ($res !== FALSE && $res == 1) {
+			$curr_count = (int)$match[0];
+			$msgs[$type][$curr - 1] = sprintf("%d more %s messages",
+																				$curr_count +  1, $type);
+		}
+		else {
+			$msgs[$type][] = sprintf("%d more %s messages", 1, $type);
 		}
 	}
 }
