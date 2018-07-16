@@ -154,6 +154,9 @@ class Book {
       $this->excerpt = $this->extract_string($summary);
     }
     $this->rating = $rating;
+    if (is_string($locations)) {
+      $locations = str_replace(';', ',', $locations);
+    }
     $this->locations = $this->extract_from_delim_string($locations);
     $this->genres = $this->extract_from_delim_string($genres);
     $this->periods = $this->extract_from_delim_string($periods);
