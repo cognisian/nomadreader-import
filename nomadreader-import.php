@@ -399,10 +399,10 @@ function import_files() {
 		}
 	}
 
-	// $url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
-	// 				admin_url('admin.php?page=' . PLUGIN_NAME));
-	// wp_redirect($url);
-	// die();
+	$url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
+					admin_url('admin.php?page=' . PLUGIN_NAME));
+	wp_redirect($url);
+	die();
 };
 
 /**
@@ -626,10 +626,6 @@ function add_book_columns_content($column, $id){
 			echo $isbn;
 	}
 	elseif ($column == 'authors' || $column == 'genres' || $column == 'periods') {
-		// $names = get_book_term_names($id, $column);
-		// $delim_names = implode(', ', $names);
-		// $replaced = preg_replace('/(.*?),/', '$1<br/>', $delim_names);
-		// echo $replaced;
 		$names = get_book_term_names($id, $column);
 		foreach($names as $name) {
 			echo '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
@@ -658,9 +654,9 @@ function add_book_columns_content($column, $id){
 	elseif ($column == 'rating') {
 		$woo_stars = wp_get_object_terms($post_id, 'product_visibility', true);
 		$rating_html = '<div class="star-rating" title="' . $woo_stars . '">';
-  	$rating_html .= '<span style="width:' . ( ( $woo_stars[-1] / 5 ) * 100 ) . '%">'.
+		$rating_html .= '<span style="width:' . ( ( $woo_stars[-1] / 5 ) * 100 ) . '%">'.
 										'<strong class="rating">' . $rating . '</strong> ' . 'out of 5' . '</span>';
-  	$rating_html .= '</div>';
+		$rating_html .= '</div>';
 	}
 }
 
