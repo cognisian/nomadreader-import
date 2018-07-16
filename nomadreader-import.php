@@ -44,6 +44,11 @@ add_action('admin_post_import_files', 'import_files');
 add_action('admin_post_export_books', 'export_books');
 add_action('admin_post_update_ext_links', 'update_ext_links');
 
+// WooCommerce Product Admin table UI hooks
+add_filter('manage_edit-product_columns', 'add_book_columns', 10, 1);
+add_filter('manage_posts_custom_column', 'add_book_columns_content', 10, 3);
+add_action('admin_print_styles', 'add_book_columns_style');
+
 /**
  * Entry point to create the NomadReader Books plugin menus
  */
@@ -368,12 +373,14 @@ function import_files() {
 
 						// Create the list of term IDs for all the differrent term types
 						$all_terms = array_merge($authors, $genres, $periods, $locations);
-						$result = create_post_object_terms($post_id, $all_terms, $book->tags);
+						$result = create_post_object_terms($post_id, $all_terms, $book->tags,
+																								$book->rating);
 						if (is_wp_error($result)) {
 							add_error($msgs, "Could not create/assoc terms for %s %s; %s",
 												array($book->isbn, $book->title, $result->get_error_message()));
 						}
 
+						// TODO Add ratings
 						// If no errors then add INFO book added message
 						if (empty($msgs['err'])) {
 							add_notice($msgs, "Added book %s %s", array($book->isbn, $book->title));
@@ -449,21 +456,6 @@ function update_ext_links() {
 ///////////////////////////////////////////////////////////////////////////////
 // SUPPORT Functions
 ///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Convert array of term names into array of term_ids
- * This will create the terms under a existing or created parent_term
- */
-function convert_term_names_to_term_ids($terms, $parent_term = '') {
-	$parent_id = get_toplevel_term($parent_term);
-	$temp = get_product_terms($terms, $parent_id);
-	$result = array_reduce($temp, function($sum, $var) {
-		$sum[] = $var['term_id'];
-		return $sum;
-	}, array());
-
-	return $result;
-}
 
 /**
  * Add a informational message to the message stack
@@ -563,24 +555,6 @@ function register_nomadreader_config() {
 		'nr_buy_button_text_cb', NR_OPT_AWS_TOKENS_GRP, NR_OPT_AFFILIATE_SECT);
 }
 
-// UI Stuff
-
-/**
- * Add the necessary JavaScript/CSS for the admin pages
- */
-function nomadreader_books_enqueue($hook) {
-
-    // Twitter Bootstrap JS
-    wp_register_script('prefix_bootstrap',
-			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js');
-    wp_enqueue_script('prefix_bootstrap');
-
-    // Twitter Bootstrap CSS
-    wp_register_style('prefix_bootstrap',
-			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css');
-    wp_enqueue_style('prefix_bootstrap');
-}
-
 /**
  * Encrypt a string using OpenSSL
  *
@@ -607,3 +581,108 @@ function decrypt_stuff($ciphertext, $key_size = 16) {
 	$iv = substr(hash('sha256', EN_V), 0, 16);
 	return openssl_decrypt($ciphertext, ENC_M, $key, OPENSSL_RAW_DATA, $iv);
 }
+
+
+// UI Stuff
+
+/**
+ * Add column headers to the WooCommerce Product admin table
+ *
+ * @param array   The array of column labels
+ * @return array 	The new array of column names
+ */
+function add_book_columns($columns){
+	return array(
+		'cb' => '<input type="checkbox" />', // checkbox for bulk actions
+		'thumb' => '<span class="wc-image tips" data-tip="Image">Image</span>',
+		'isbn' => 'ISBN', // CUSTOM
+		'name' => 'Name',
+		'authors' => 'Authors',  // CUSTOM
+		'location' => 'Locations',  // CUSTOM
+		'genres' => 'Genres',  // CUSTOM
+		'periods' => 'Periods',  // CUSTOM
+		// 'sku' => 'SKU', // REMOVED
+		// 'is_in_stock' => 'Stock',    // REMOVED
+		// 'price' => 'Price',    // REMOVED
+		// 'product_cat' => 'Categories',  // REMOVED
+		'product_tag' => 'Tags',
+		'featured' => '<span class="wc-featured parent-tips" data-tip="Featured">Featured</span>',
+		//'product_type' => '<span class="wc-type parent-tips" data-tip="Type">Type</span>' // REMOVED
+	);
+}
+
+/**
+ * Add the custom column data to the WooCommerce Product admin table
+ *
+ * @param string 	The current column name
+ * @param string 	The column content
+ */
+function add_book_columns_content($column, $id){
+
+	require_once('utilities.php');
+
+	if (strtolower($column) == 'isbn') {
+			$isbn = get_post_meta($id, 'isbn_prod', true);
+			echo $isbn;
+	}
+	elseif ($column == 'authors' || $column == 'genres' || $column == 'periods') {
+		// $names = get_book_term_names($id, $column);
+		// $delim_names = implode(', ', $names);
+		// $replaced = preg_replace('/(.*?),/', '$1<br/>', $delim_names);
+		// echo $replaced;
+		$names = get_book_term_names($id, $column);
+		foreach($names as $name) {
+			echo '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
+					esc_html(sanitize_title($name)) . '&post_type=product')) . ' ">' .
+					esc_html($name) . '</a>, <br/>';
+		}
+	}
+	elseif ($column == 'location') {
+		$names_link = array();
+
+		$names = array_chunk(get_book_term_names($id, $column), 2);
+		foreach($names as $name) {
+			$temp = '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
+					sanitize_title(strtolower($name[0])) . '&post_type=product')) . ' ">' .
+					esc_html($name[0]) . '</a>';
+			if (isset($name[1])) {
+				$temp .= ', ' . '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
+						sanitize_title(strtolower($name[1])) . '&post_type=product')) . ' ">' .
+						esc_html($name[1]) . '</a>';
+			}
+			$names_link[] = $temp;
+		}
+		$delim_names = implode(',<br/>', $names_link);
+		echo $delim_names;
+	}
+}
+
+/**
+ * Tweak the Product Admin table CSS layout
+ */
+function add_book_columns_style() {
+	$css = ".widefat .column-isbn { width: 8%; }\n";
+	$css = ".widefat .column-authors { width: 22%; }\n";
+	$css = ".widefat .column-locations { width: 16%; }\n";
+	$css = ".widefat .column-genres { width: 16%; }\n";
+	$css = ".widefat .column-periods { width: 11%; }\n";
+	wp_add_inline_style('woocommerce_admin_styles', $css);
+}
+
+/**
+ * Add the necessary JavaScript/CSS for the admin pages
+ */
+function nomadreader_books_enqueue($hook) {
+
+    // Twitter Bootstrap JS
+    wp_register_script('prefix_bootstrap',
+			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js');
+    wp_enqueue_script('prefix_bootstrap');
+
+    // Twitter Bootstrap CSS
+    wp_register_style('prefix_bootstrap',
+			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css');
+    wp_enqueue_style('prefix_bootstrap');
+}
+
+?>
