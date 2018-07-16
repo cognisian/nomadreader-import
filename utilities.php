@@ -151,11 +151,13 @@ function create_post_object_terms($post_id, $terms, $tags = '', $rating = 0.0) {
 		register_taxonomy('product_tag', 'product');
 	}
 	wp_set_object_terms($post_id, $book['tags'], 'product_tag', true);
-	
+
 	// Set Rating
 	$woo_rating = (int)$rating;
-	$woo_stars = 'rated-'.$woo_rating;
-	wp_set_object_terms($post_id, $woo_stars, 'product_visibility', true);
+	if ($woo_rating > 0) {
+		$woo_stars = 'rated-'.$woo_rating;
+		wp_set_object_terms($post_id, 'product_visibility', $woo_stars, true);
+	}
 
 	return $res;
 }
@@ -260,13 +262,13 @@ function convert_term_names_to_term_ids($terms, $parent_term = '') {
 
 /**
  * Get the subterm names for given parent term
- * 
+ *
  * @param int $post_id			  The post_id whose term names are to be retrieved
  * @param string $parent_term	The top level term to get its sub termnames
  * @param array	 							The subterm names for parent term
  */
 function get_book_term_names($post_id, $parent_term = '') {
-	
+
 	$parent_id = get_toplevel_term($parent_term);
 	$terms = get_the_terms($post_id, 'product_cat');
 	// Remove any terms not related to parent_term
@@ -278,7 +280,7 @@ function get_book_term_names($post_id, $parent_term = '') {
 		$sum[] = $var->name;
 		return $sum;
 	}, array());
-	
+
 	return $result;
 }
 
