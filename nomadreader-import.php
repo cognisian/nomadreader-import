@@ -42,6 +42,7 @@ add_action('admin_init', 'register_nomadreader_config');
 // Register the form submission handlers to process:
 // 		import_file (csv and json detection required)
 add_action('admin_post_import_files', 'import_files');
+add_action('admin_post_export_books', 'export_books');
 
 /**
  * Entry point to create the NomadReader Books plugin menus
@@ -54,8 +55,8 @@ function nomadreader_books() {
 		'nomadreader_search', PLUGIN_URL . 'images/book.png', 7);
 
 	// Add the menu option to export and add the target to perform the export
-	add_submenu_page(NR_MENU_SLUG, 'NomadReader Export To CSV',
-		'Export to CSV', 1, 'export_books', 'nomadreader_export_books');
+	add_submenu_page(NR_MENU_SLUG, 'NomadReader Export Books',
+		'Export Books', 1, 'nomadreader_export_books', 'nomadreader_export_books');
 	add_action('admin_action_export_books', 'export_books');
 
 	// Add menu to update external affiliate links
@@ -79,23 +80,70 @@ function nomadreader_books() {
  * Show the Search/Import UI
  */
 function nomadreader_search() {
+
 	ob_start();
-	$num_files_uploadable = ini_get('max_file_uploads');
-	$size_files_uploadable = ini_get('post_max_size');
-	include('templates/tpl-search-import.phtml');
-	if (isset($_GET['msgs']) && !empty($_GET['msgs'])) {
-		$msgs = json_decode(base64_decode($_GET['msgs']));
-		if (property_exists($msgs, 'err')) {
-			foreach($msgs->err as $err_msg) {
-				include('templates/tpl-error-notice.phtml');
+		$num_files_uploadable = ini_get('max_file_uploads');
+		$size_files_uploadable = ini_get('post_max_size');
+		include('templates/tpl-search-import.phtml');
+		if (isset($_GET['msgs']) && !empty($_GET['msgs'])) {
+			$msgs = json_decode(base64_decode($_GET['msgs']));
+			if (property_exists($msgs, 'err')) {
+				foreach($msgs->err as $err_msg) {
+					include('templates/tpl-error-notice.phtml');
+				}
+			}
+			if (property_exists($msgs, 'inf')) {
+				foreach($msgs->inf as $inf_msg) {
+					include('templates/tpl-info-notice.phtml');
+				}
 			}
 		}
-		if (property_exists($msgs, 'inf')) {
-			foreach($msgs->inf as $inf_msg) {
-				include('templates/tpl-info-notice.phtml');
+	ob_end_flush();
+}
+
+/**
+ * Show the Export Books UI
+ */
+function nomadreader_export_books() {
+
+	ob_start();
+		include('templates/tpl-export-books.phtml');
+		if (isset($_GET['msgs']) && !empty($_GET['msgs'])) {
+			$msgs = json_decode(base64_decode($_GET['msgs']));
+			if (property_exists($msgs, 'err')) {
+				foreach($msgs->err as $err_msg) {
+					include('templates/tpl-error-notice.phtml');
+				}
+			}
+			if (property_exists($msgs, 'inf')) {
+				foreach($msgs->inf as $inf_msg) {
+					include('templates/tpl-info-notice.phtml');
+				}
 			}
 		}
-	}
+	ob_end_flush();
+}
+
+/**
+ * Show the Export Books UI
+ */
+function nomadreader_update_ext_links() {
+
+	ob_start();
+		include('templates/tpl-update-links.phtml');
+		if (isset($_GET['msgs']) && !empty($_GET['msgs'])) {
+			$msgs = json_decode(base64_decode($_GET['msgs']));
+			if (property_exists($msgs, 'err')) {
+				foreach($msgs->err as $err_msg) {
+					include('templates/tpl-error-notice.phtml');
+				}
+			}
+			if (property_exists($msgs, 'inf')) {
+				foreach($msgs->inf as $inf_msg) {
+					include('templates/tpl-info-notice.phtml');
+				}
+			}
+		}
 	ob_end_flush();
 }
 
@@ -104,14 +152,160 @@ function nomadreader_search() {
 //////////////////////////////////////////////////////////////////////////////
 
 /**
+ * Export all books to a specified format
+ */
+function export_books() {
+
+	if (ini_get('safe_mode')) {
+		ini_set('max_execution_time', 0);
+	}
+	else {
+		set_time_limit(0);
+	}
+
+	$result = '';
+	$msgs = array();
+
+	$file_type = '';
+	$file_mime = '';
+	if (isset($_POST['export_books_csv_submit'])) {
+		$file_type .= '.csv';
+		$file_mime = 'text/csv';
+	}
+	elseif (isset($_POST['export_books_json_submit'])) {
+		$file_type .= '.json';
+		$file_mime = 'application/json';
+	}
+	else {
+		add_error($messages, 'Missing expected export type.');
+	}
+	$file_name = 'nomadreader-books' . $file_type;
+
+	$csv = [];
+	$csv[] = 'ISBN, Title, Authors, Summary, Rating, Location, Genres, Periods, Tags, Cover';
+	$csv_rec = '%1$s, "%2$s", "%3$s", "%4$s", "%5$s", "%6$s", "%7$s", "%8$s", "%9$s", %10$s';
+
+
+	// Get the list of published product posts
+	$args = array(
+		'orderby'          => 'ID',
+		'order'            => 'DESC',
+		'posts_per_page' 	 => -1,
+		'post_type'        => 'product',
+		'post_status'      => 'publish',
+	);
+	$books = get_posts($args);
+
+	foreach($books as $book) {
+		$tmp = [];
+		// For each post get post meta data for ISBN
+		$isbn = get_post_meta($book->ID, 'isbn_prod', true);
+		if (!empty($isbn)) {
+				$tmp['isbn'] = $isbn;
+		}
+		else {
+			add_error($msgs, "Unable to locate ISBN for book %s", array($book->post_title));
+		}
+
+		$tmp['title'] = $book->post_title;
+		$tmp['summary'] = str_replace('"', '""', $book->post_content);
+
+		// For each top level term get ID
+		$auth_term_id = get_term_by('name', 'Authors', 'product_cat');
+		$loc_term_id = get_term_by('name', 'Location', 'product_cat');
+		$genres_term_id = get_term_by('name', 'Genres', 'product_cat');
+		$periods_term_id = get_term_by('name', 'Periods', 'product_cat');
+
+		// For each post get all the associated terms product_cat
+		$terms = wp_get_post_terms($book->ID, 'product_cat',
+															 array("fields" => "all"));
+		foreach ($terms as $value) {
+			// Add term names to proper CSV column
+			switch ($value->parent) {
+				case $auth_term_id->term_id:
+				  if (isset($tmp['authors'])) { $tmp['authors'] .= ', ' . $value->name; }
+					else { $tmp['authors'] = $value->name; }
+					break;
+
+				case $loc_term_id->term_id:
+					if (isset($tmp['location'])) { $tmp['location'] .= ', ' . $value->name; }
+					else { $tmp['location'] = $value->name; }
+					break;
+
+				case $genres_term_id->term_id:
+					if (isset($tmp['genres'])) { $tmp['genres'] .= ', ' . $value->name; }
+					else { $tmp['genres'] = $value->name; }
+					break;
+
+				case $periods_term_id->term_id:
+					if (isset($tmp['periods'])) { $tmp['periods'] .= ', ' . $value->name; }
+					else { $tmp['periods'] = $value->name; }
+					break;
+			}
+		}
+
+		// For each post get all the associated tags product_tag
+		$tags = wp_get_post_terms($book->ID, 'product_tag',
+															array("fields" => "all"));
+		$tmp['tags'] = '';
+		foreach($tags as $tag) {
+			if (isset($tmp['tags'])) { $tmp['tags'] .= ', ' . $tag->name; }
+			else { $tmp['tags'] = $tag->name; }
+		}
+
+		$tmp['cover'] = '';
+		$thumb_id = get_post_meta($book->ID, '_thumbnail_id', True);
+		$attachment = get_post($thumb_id);
+		if ($attachment) {
+			$tmp['cover'] = $attachment->guid;
+		}
+		else {
+			add_error($msgs, "Unable to image for book %s", array($book->post_title));
+		}
+
+		// Build CSV record of:
+	 	// ISBN, Title, Authors, Summary, Rating, Location, Genres, Periods, Tags,	Cover
+		$csv[] = sprintf($csv_rec, $tmp['isbn'], $tmp['title'], $tmp['authors'],
+											$tmp['summary'], "0.0", $tmp['location'],
+											html_entity_decode($tmp['genres']), $tmp['periods'],
+											$tmp['tags'], $tmp['cover']);
+	}
+
+	// Build complete CSV string
+	foreach($csv as $row) {
+		$result .= $row . "\n";
+	}
+
+	// Download It
+	if (!empty($result) && !empty($file_name)) {
+		header('Content-Description: Download NomadReader books');
+		header("Content-type: " . $file_mime);
+		header("Content-Disposition: attachment; filename=" . $file_name);
+		header("Pragma: no-cache");
+		header("Expires: 0");
+		ob_end_clean();
+		ob_start();
+			echo $result;
+		ob_end_flush();
+	}
+}
+
+/**
  * Callback to handler admin POST submission to import a file
  */
 function import_files() {
 
+	if (ini_get('safe_mode')) {
+		ini_set('max_execution_time', 0);
+	}
+	else {
+		set_time_limit(0);
+	}
+
 	require('Book.php');
 	require('utilities.php');
 
-	$messages = array();
+	$msgs = array();
 
 	// Make sure this is the correct operation
 	if ((isset($_POST['action']) && $_POST['action'] == 'import_files') &&
@@ -132,7 +326,8 @@ function import_files() {
 				$books = Book::parse_json($import_file);
 			}
 			else {
-				process_file_error($messages, $_FILES['import_files']['name'][$idx], $file_type);
+				add_error($msgs, "Unable to import %s of type %s",
+									array($_FILES['import_files']['name'][$idx], $file_type));
 				break;
 			}
 
@@ -154,7 +349,8 @@ function import_files() {
 					);
 					$attach_id = create_attachment_post($img, $post_id);
 					if (is_wp_error($attach_id)) {
-						process_book_error($messages, $attach_id, $book->isbn, $book->title);
+						add_error($msgs, "Could not insert attachment post for %s %s; %s",
+											array($book->isbn, $book->title, $attach_id->get_error_message()));
 					}
 
 					// Create the set of term IDs, if not exist and associate
@@ -175,17 +371,19 @@ function import_files() {
 					$all_terms = array_merge($authors, $genres, $periods, $locations);
 					$result = create_post_object_terms($post_id, $all_terms, $book->tags);
 					if (is_wp_error($result)) {
-						process_book_error($messages, $result, $book->isbn, $book->title);
+						add_error($msgs, "Could not create/assoc terms for %s %s; %s",
+											array($book->isbn, $book->title, $result->get_error_message()));
 					}
 
-					// IF no errors then add INFO book added message
+					// If no errors then add INFO book added message
 					if (empty($messages['err'])) {
-						process_book_info($messages, $book->isbn, $book->title);
+						add_notice($msgs, "Added book %s %s", array($book->isbn, $book->title));
 					}
 				}
 				else {
 					// Failed to create WP post for book
-					process_book_error($messages, $post_id, $book->isbn, $book->title);
+					add_error($msgs, "Could not create Book product post for %s %s; %s",
+										array($book->isbn, $book->title, $post_id->get_error_message()));
 					break;
 				}
 			}
@@ -218,72 +416,57 @@ function convert_term_names_to_term_ids($terms, $parent_term = '') {
 }
 
 /**
- * Given an error and a list of previous error messages add a new message
- * to the stack, or if it exceeds 10 messages add one generic message
+ * Add a informational message to the message stack
  *
- * @param array $err_msgs		The stack of previous error messages to add this err
- * @param string $file_name	The name of file being processed
- * @param string $file_type	The type of file being processed
+ * @param array $msgs					The stack of previous messages to add notice
+ * @param string $notice			The notice message in sprintf format
+ * @param array $notice_parms	The array of parameters to insert into $notice
  */
-function process_file_error(&$err_msgs, $file_name, $file_type) {
-
-	if (empty($err_msgs) || !array_key_exists('err', $err_msgs)) {
-			$err_msgs['err'] = array();
-	}
-
-	if (count($err_msgs['err']) < 10) {
-		$err_msgs['err'][] = sprintf("Could not import %s of type %s",
-													$file_name, $file_type);
-	}
-	else if (count($err_msgs['err']) == 10) {
-		$err_msgs['err'][] = sprintf("More then %d errors detected",
-													count($err_msgs['err']));
-	}
+function add_notice(&$msgs, $notice, $notic_parms=array()) {
+	process_message($msgs, $notice, $notic_parms, 'inf');
 }
 
 /**
- * A book was successfully parsed so add to list of messages
+ * Add a informational message to the message stack
  *
- * @param array $msgs				The stack of previous error messages to add this err
- * @param string $isbn			The ISBN of the book in error
- * @param string $title			The title of the book in error
+ * @param array $msgs					The stack of previous messages to add notice
+ * @param string $notice			The notice message in sprintf format
+ * @param array $notice_parms	The array of parameters to insert into $notice
  */
-function process_book_info(&$msgs, $isbn, $title) {
-
-	if (empty($msgs) || !array_key_exists('inf', $msgs)) {
-			$msgs['inf'] = array();
-	}
-
-	if (count($msgs['inf']) < 10) {
-		$msgs['inf'][] = sprintf("Created post for book %s %s", $isbn, $title);
-	}
-	elseif (count($msgs['inf']) == 10) {
-		$msgs['inf'][] = sprintf("More then %d info messages", count($msgs['inf']));
-	}
+function add_error(&$msgs, $notice, $notic_parms=array()) {
+	process_message($msgs, $notice, $notic_parms, 'err');
 }
 
 /**
- * Given an error and a list of previous error messages add a new message
- * to the stack, or if it exceeds 10 messages add one generic message
+ * Add a informational message to the message stack
  *
- * @param array $err_msgs		The stack of previous error messages to add this err
- * @param WPError $error		The current error
- * @param string $isbn			The ISBN of the book in error
- * @param string $title			The title of the book in error
+ * @param array $msgs					The stack of previous messages to add notice
+ * @param string $notice			The notice message in sprintf format
+ * @param array $notice_parms	The array of parameters to insert into $notice
+ * @param string $type				Type of message, either 'err' or 'inf'
  */
-function process_book_error(&$err_msgs, $error, $isbn, $title) {
+function process_message(&$msgs, $notice, $notic_parms, $type='err') {
 
-	if (empty($err_msgs) || !array_key_exists('err', $err_msgs)) {
-			$err_msgs['err'] = array();
+	if (empty($msgs) || !array_key_exists($type, $msgs)) {
+			$msgs[$type] = array();
 	}
 
-	if (count($err_msgs['err']) < 10) {
-		$err_msgs['err'][] = sprintf("Could not insert post for %s %s; %s",
-													$isbn, $title, $error->get_error_message());
+	if (count($msgs[$type]) < 10) {
+		$msgs[$type][] = vsprintf($notice, $notice_parms);
 	}
-	elseif (count($err_msgs['err']) == 10) {
-		$err_msgs['err'][] = sprinf("More then {count} errors detected",
-													count($err_msgs['err']));
+	elseif (count($msgs[$type]) == 10) {
+		$msgs[$type][] = vsprintf("More than %d info messages", count($msgs[$type]));
+	}
+	else {
+		// Replace last messaage with updated messages count
+		$curr = count($msgs[$type]);
+
+		$match = array();
+		preg_match('/d+/', $msgs[$type][$curr - 1], $match);
+		$curr_count = $match[0];
+		if (is_int($curr_count)) {
+			$msgs[$type][$curr - 1] = sprintf("More than %d info messages", $curr_count + 1);
+		}
 	}
 }
 
@@ -345,15 +528,6 @@ function nomadreader_books_enqueue($hook) {
     wp_register_style('prefix_bootstrap',
 			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css');
     wp_enqueue_style('prefix_bootstrap');
-
-		// jQuery multiselect option dropdown/search plugin
-		$url = plugins_url(PLUGIN_NAME . '/javascripts');
-		wp_register_script('amznbk_jq_chosen_js', $url . '/chosen.jquery.min.js');
-		wp_enqueue_script('amznbk_jq_chosen_js');
-
-		$url = plugins_url(PLUGIN_NAME . '/css');
-		wp_register_style('amznbk_jq_chosen_css', $url .'/chosen.min.css');
-		wp_enqueue_style('amznbk_jq_chosen_css');
 }
 
 /**

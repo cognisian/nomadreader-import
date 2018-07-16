@@ -93,6 +93,18 @@ class Book {
   }
 
   /**
+   * Instantiate a Book given its ISBN
+   *
+   * @param string $isbn  ISBN of book to retrieve from WordPress
+   * @return Book         An instantiated Book
+   */
+  public function load_book($isbn) {
+
+    // return new Book($isbn, $title, $authors, $summary, $rating, $locations,
+    //                 $genres, $periods, $tags, $image);
+  }
+
+  /**
    * Setup and execute book title or ISBN search agaist Amazon API
    *
    * @param obj $provider     The search provider
@@ -102,125 +114,7 @@ class Book {
    * @return array            The list of books found or empty if none found
    */
   static public function search($provider, $search, $lookupFlag = False) {
-    //require('lib/AmazonECS.class.php');
-    // /**
-    //  *
-    //  */
-    // function sort_pub_date($a, $b) {
-    // 	if ($a == $b) {
-    //       return 0;
-    //   }
-    // 	// We want descending dates
-    //   return ($a < $b) ? 1 : -1;
-    // }
-    //
-    // $books = array();
-    //
-  	// // Retrieve the AWS access opions
-  	// $options = get_option(NR_OPT_AWS_TOKENS_CONFIG);
-  	// $access_key = isset($options[NR_AWS_ACCESS_TOKEN]) ?
-  	// 								$options[NR_AWS_ACCESS_TOKEN] : '';
-  	// $secret_key = isset($options[NR_AWS_SECRET_TOKEN]) ?
-  	// 							decrypt_stuff(base64_decode($options[NR_AWS_SECRET_TOKEN])) :
-  	// 							'';
-  	// $affilate_tag = isset($options[NR_AWS_AFFILIATE_TAG]) ?
-  	// 								$options[NR_AWS_AFFILIATE_TAG] : '';
-    //
-  	// // Set parameters for Amazon API
-  	// $amzn = new AmazonECS($access_key, $secret_key, 'com', $affilate_tag);
-  	// try {
-  	// 	// Select how we find books (search v lookup) based on whether it is a title or isbn
-  	// 	if (!$lookupFlag) {
-  	// 		$response = $amzn->responseGroup('Medium,Reviews')->
-  	// 				category('Books')->search($search);
-  	// 		$items = $response->Items->Item;
-  	// 	}
-  	// 	else {
-  	// 		$isbn = $search['isbn'];
-  	// 		$response = $amzn->responseGroup('Medium,Reviews')->
-  	// 				category('Books')->lookup($isbn);
-  	// 		$items = $response->Items;
-  	// 	}
-    //
-  	// 	// Amazon error
-  	// 	if (isset($response->Items->Request->Errors)) {
-  	// 		return new WP_Error('AmazonECS Error',
-  	// 								'An error with AmazonECS ocurred');
-  	// 	}
-    //
-  	// 	// Lop through each returned item and build details
-  	// 	$i = 0;
-  	// 	foreach($items as $item_id) {
-  	// 		// Skip this item if no ASIN attribute as it may be an
-  	// 		// info block as part of response
-  	// 		if (!isset($item_id->ASIN)) {
-  	// 			continue;
-  	// 		}
-    //
-  	// 		// Extract all the image details
-  	// 		$img_set_info = [];
-    //
-  	// 		$large_img = $item_id->LargeImage;
-  	// 		$img_lg_info = array('width'  => (int)$large_img->Width->_,
-  	// 												 'height' => (int)$large_img->Height->_,
-  	// 											 	 'file'   => $large_img->URL);
-    //
-  	// 	 	$med_img = $item_id->MediumImage;
-  	// 		$img_md_info = array('width'  => (int)$med_img->Width->_,
-  	// 												 'height' => (int)$med_img->Height->_,
-  	// 											 	 'file'   => $med_img->URL);
-    //
-  	// 		$small_img = $item_id->SmallImage;
-  	// 		$img_sm_info = array('width'  => (int)$small_img->Width->_,
-  	// 												 'height' => (int)$small_img->Height->_,
-  	// 											 	 'file'   => $small_img->URL);
-    //
-  	// 		// save image details
-  	// 		$img_set_info = array('large'  => $img_lg_info,
-  	// 													'medium' => $img_md_info,
-  	// 										 			'small'  => $img_sm_info);
-    //
-  	// 		// Extract first sentence as excerpt
-  	// 		$tmp_content = $item_id->EditorialReviews->EditorialReview->Content;
-  	// 		$index = strpos($tmp_content, '<br');
-  	// 		$excerpt = substr($tmp_content, 0, $index);
-  	// 		if (!empty($excerpt) && strlen($excerpt) > 256) {
-  	// 			$index = strpos($tmp_content, '.');
-  	// 			$excerpt = substr($tmp_content, 0, $index);
-  	// 		}
-  	// 		$excerpt .= '<br/>';
-    //
-  	// 		// Save book details
-  	// 		$pdate = date_create($item_id->ItemAttributes->PublicationDate);
-  	// 		$tmp_info = array(
-  	// 			'pub_date' => date_format($pdate, 'Ymd'),
-  	// 			'isbn'		 => $item_id->ItemAttributes->ISBN,
-  	// 			'title' 	 => $item_id->ItemAttributes->Title,
-  	// 			'authors'	 => $item_id->ItemAttributes->Author,
-  	// 			'images'	 => $img_set_info,
-  	// 			'excerpt'  => $excerpt,
-  	// 			'desc'		 => $item_id->EditorialReviews->EditorialReview->Content,
-  	// 		);
-    //
-  	// 		// If no ISBN then not a book and ignore
-  	// 		if (!empty($tmp_info['isbn'])) {
-  	// 			$books[] = $tmp_info;
-  	// 		}
-  	// 	}
-  	// }
-  	// catch(Exception $e)	{
-  	// 	// var_dump($e);
-  	// 	// $traces = $e->getTrace();
-  	// 	// foreach($traces as $trace) {
-  	// 	// 	var_dump($trace['args']);
-  	// 	// }
-  	// 	echo $e->getMessage();
-  	// }
-    //
-  	// // Sort the books by dscending pub date
-  	// usort($books, sort_pub_date);
-    //
-  	// return $books;
+
   }
 
   /**
@@ -260,7 +154,7 @@ class Book {
       $this->excerpt = $this->extract_string($summary);
     }
     $this->rating = $rating;
-    $this->locations = $this->extract_from_delim_string($locations, ';');
+    $this->locations = $this->extract_from_delim_string($locations);
     $this->genres = $this->extract_from_delim_string($genres);
     $this->periods = $this->extract_from_delim_string($periods);
     $this->tags = $tags;
