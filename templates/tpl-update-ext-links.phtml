@@ -1,0 +1,14 @@
+<div class="row">
+  <div class="col-md">
+    <h3>Update the Affiliate tag in External Links</h3>
+    <small>Using the configuration for the affiliate tag set in
+      Settings -> NomadReader Amazon Tokens</small><br/>
+    <small>Update all the links used in the Buy buttons</small>
+    <br/><br/>
+    <form action="<?php echo admin_url('admin-post.php')?>" method="post"
+          name="update_ext_links">
+      <input type="hidden" name="action" value="update_ext_links" />
+      <input type="submit" name="update_ext_links_submit" value="Update External Links" />
+    </form>
+  </div>
+</div>

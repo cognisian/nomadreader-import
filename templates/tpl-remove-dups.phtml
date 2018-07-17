@@ -1,6 +1,11 @@
 <div class="row">
   <div class="col-md">
-    <h3>Export Books</h3>
+    <h3>Remove Duplicate Books</h3>
+    <small>A duplicate book is where 2 product posts share the same ISBN and Title</small><br/>
+    <small>All duplicate books are moved to the Trash where they can be permanently
+      deleted or restored if desired
+    </small>
+    <br/><br/>
     <form action="<?php echo admin_url('admin-post.php')?>" method="post"
           name="export_books">
       <input type="hidden" name="action" value="export_books" />
