@@ -9,6 +9,10 @@
  * Author: Sean Chalmers seandchalmers@yahoo.ca
  */
 
+if (!defined('WPINC')) {
+	die();
+}
+
 define('PLUGIN_NAME', 'nomadreader-import');
 define('PLUGIN_URL', plugin_dir_url(__FILE__));
 define('PLUGIN_VER', '1.0.0');
@@ -43,6 +47,7 @@ add_action('admin_init', 'register_nomadreader_config');
 add_action('admin_post_import_files', 'import_files');
 add_action('admin_post_export_books', 'export_books');
 add_action('admin_post_update_ext_links', 'update_ext_links');
+add_action('admin_post_remove_dups', 'remove_duplicate_books');
 
 // WooCommerce Product Admin table UI hooks
 add_filter('manage_edit-product_columns', 'add_book_columns', 10, 1);
@@ -68,6 +73,12 @@ function nomadreader_books() {
 	add_submenu_page(NR_MENU_SLUG, 'NomadReader Update External Affiliate Links',
 		'Update Ext Affiliate Links', 1, 'update_ext_links',
 		'nomadreader_update_ext_links');
+	add_action('admin_action_update_ext_links', 'update_ext_links');
+
+	// Add menu to update external affiliate links
+	add_submenu_page(NR_MENU_SLUG, 'NomadReader Duplicate Book Detection',
+		'Remove Duplicate Books', 1, 'remove_duplicate_books',
+		'nomadreader_remove_duplicate_books');
 	add_action('admin_action_update_ext_links', 'update_ext_links');
 
 	// Add menu to Settings to update the Amazon tokens
@@ -136,6 +147,29 @@ function nomadreader_update_ext_links() {
 
 	ob_start();
 		include('templates/tpl-update-ext-links.phtml');
+		if (isset($_GET['msgs']) && !empty($_GET['msgs'])) {
+			$msgs = json_decode(base64_decode($_GET['msgs']));
+			if (property_exists($msgs, 'err')) {
+				foreach($msgs->err as $err_msg) {
+					include('templates/tpl-error-notice.phtml');
+				}
+			}
+			if (property_exists($msgs, 'inf')) {
+				foreach($msgs->inf as $inf_msg) {
+					include('templates/tpl-info-notice.phtml');
+				}
+			}
+		}
+	ob_end_flush();
+}
+
+/**
+ * Show the Remove Duplicate Books UI
+ */
+function nomadreader_remove_duplicate_books() {
+
+	ob_start();
+		include('templates/tpl-remove-dups.phtml');
 		if (isset($_GET['msgs']) && !empty($_GET['msgs'])) {
 			$msgs = json_decode(base64_decode($_GET['msgs']));
 			if (property_exists($msgs, 'err')) {
@@ -452,6 +486,76 @@ function update_ext_links() {
 	die();
 }
 
+/**
+ * Remove Duplicate Books
+ */
+function remove_duplicate_books() {
+
+	require('Book.php');
+	require('utilities.php');
+
+	global $wpdb;
+
+	$msgs = array();
+	$books = array();
+
+	if (isset($_POST['action']) && $_POST['action'] == 'remove_dups') {
+
+		// Get the list of ISBNs
+		$results = $wpdb->get_results("
+			SELECT meta_value as isbn
+			FROM {$wpdb->prefix}postmeta
+			WHERE meta_key = 'isbn_prod'
+			GROUP BY meta_value
+			ORDER BY meta_value
+		");
+
+		// For each ISBN get the associated posts
+		foreach($results as $row) {
+			// Use DESC as latest post will have higher ID, that way first post returned
+			// will be the one we keep ie higher post ID = most recent post
+			$args = array(
+		    'meta_key' 				=> 'isbn_prod',
+				'meta_value' 			=> $row->isbn,
+		    'post_type' 			=> 'product',
+		    'post_status' 		=> 'publish',
+		    'posts_per_page' 	=> -1,
+				'orderby'         => 'ID',
+				'order'           => 'DESC'
+			);
+			$posts = get_posts($args);
+			
+			// If 2 or more posts returned then duplicates
+			if (count($posts) >= 2) {
+				$ref_post = array_shift($posts);
+				foreach($posts as $post) {
+					if ($ref_post->post_title == $post->post_title) {
+						// Update the post into the trash
+					  $res = wp_trash_post($post->ID);
+						if ($res === FALSE) {
+							add_error($msgs, 'Unable to move post %d to trash for ISBN %s',
+													array($post->ID, $row->isbn));
+						}
+						else {
+							add_notice($msgs, 'Removed duplicate post %d for ISBN %s',
+													array($post->ID, $row->isbn));
+						}
+					}
+					else {
+						add_notice($msgs, 'Duplicate ISBNs %s point to different books % and %',
+												array($row->isbn, $ref_post->post_title, $post->post_title));
+					}
+				}
+			}
+		}
+	}
+
+	$url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
+					admin_url('admin.php?page=' . 'remove_duplicate_books'));
+	wp_redirect($url);
+	die();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // SUPPORT Functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -605,7 +709,7 @@ function add_book_columns($columns){
 		// 'price' => 'Price',    // REMOVED
 		// 'product_cat' => 'Categories',  // REMOVED
 		'product_tag' => 'Tags',
-		// 'rating' => 'Rating',  // CUSTOM
+		'rating' => 'Rating',  // CUSTOM
 		'featured' => '<span class="wc-featured parent-tips" data-tip="Featured">Featured</span>',
 		//'product_type' => '<span class="wc-type parent-tips" data-tip="Type">Type</span>' // REMOVED
 	);
