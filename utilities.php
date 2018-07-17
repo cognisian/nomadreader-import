@@ -155,8 +155,10 @@ function create_post_object_terms($post_id, $terms, $tags = '', $rating = 0.0) {
 	// Set Rating
 	$woo_rating = (int)$rating;
 	if ($woo_rating > 0) {
+		if ($woo_rating > 5) { $woo_rating = 5; }
 		$woo_stars = 'rated-'.$woo_rating;
-		wp_set_object_terms($post_id, 'product_visibility', $woo_stars, true);
+		$res = wp_set_object_terms($post_id, array($woo_stars), 'product_visibility');
+		wp_update_term_count_now($woo_stars, 'product_visibility');
 	}
 
 	return $res;

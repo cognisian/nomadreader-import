@@ -605,7 +605,7 @@ function add_book_columns($columns){
 		// 'price' => 'Price',    // REMOVED
 		// 'product_cat' => 'Categories',  // REMOVED
 		'product_tag' => 'Tags',
-		'rating' => 'Rating',  // CUSTOM
+		// 'rating' => 'Rating',  // CUSTOM
 		'featured' => '<span class="wc-featured parent-tips" data-tip="Featured">Featured</span>',
 		//'product_type' => '<span class="wc-type parent-tips" data-tip="Type">Type</span>' // REMOVED
 	);
@@ -651,13 +651,14 @@ function add_book_columns_content($column, $id){
 		$delim_names = implode(',<br/>', $names_link);
 		echo $delim_names;
 	}
-	elseif ($column == 'rating') {
-		$woo_stars = wp_get_object_terms($post_id, 'product_visibility', true);
-		$rating_html = '<div class="star-rating" title="' . $woo_stars . '">';
-		$rating_html .= '<span style="width:' . ( ( $woo_stars[-1] / 5 ) * 100 ) . '%">'.
-										'<strong class="rating">' . $rating . '</strong> ' . 'out of 5' . '</span>';
-		$rating_html .= '</div>';
-	}
+	// elseif ($column == 'rating') {
+	// 	$woo_stars = wp_get_object_terms($id, 'product_visibility');
+	// 	$rating_html = '<div class="star-rating" title="' . $woo_stars . ' out of 5' . '">';
+	// 	// TODO Repeat this rating times
+	// 	$rating_html = '<div class="star star-full"></div>';
+	// 	$rating_html .= '</div>';
+	// 	echo $rating_html;
+	// }
 }
 
 /**
