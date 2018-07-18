@@ -100,8 +100,27 @@ class Book {
    */
   public function load_book($isbn) {
 
-    // return new Book($isbn, $title, $authors, $summary, $rating, $locations,
-    //                 $genres, $periods, $tags, $image);
+    // Get the list of ISBNs
+		$results = $wpdb->get_results("
+			SELECT post_id
+			FROM {$wpdb->prefix}postmeta
+			WHERE meta_key = 'isbn_prod' and meta_value = {$isbn}
+		");
+
+    if (count($result) == 1) {
+      $row = $result[0];
+			$args = array(
+		    'meta_key' 				=> 'isbn_prod',
+				'meta_value' 			=> $row->isbn,
+		    'post_type' 			=> 'product',
+		    'post_status' 		=> 'publish',
+		    'posts_per_page' 	=> 1,
+			);
+  		$book_post = get_posts($args);
+
+      // return new Book($isbn, $title, $authors, $summary, $rating, $locations,
+      //                 $genres, $periods, $tags, $image);
+    }
   }
 
   /**

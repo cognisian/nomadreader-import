@@ -51,7 +51,10 @@ add_action('admin_post_remove_dups', 'remove_duplicate_books');
 
 // WooCommerce Product Admin table UI hooks
 add_filter('manage_edit-product_columns', 'add_book_columns', 10, 1);
-add_filter('manage_posts_custom_column', 'add_book_columns_content', 10, 3);
+add_filter('manage_edit-product_sortable_columns', 'add_book_sortable_columns', 10, 1);
+add_filter('manage_product_posts_custom_column', 'add_book_columns_content', 10, 3);
+// add_action('pre_get_posts', 'book_orderby', 10, 1);
+add_action('posts_clauses', 'book_orderby', 10, 2);
 add_action('admin_print_styles', 'add_book_columns_style');
 
 /**
@@ -524,7 +527,7 @@ function remove_duplicate_books() {
 				'order'           => 'DESC'
 			);
 			$posts = get_posts($args);
-			
+
 			// If 2 or more posts returned then duplicates
 			if (count($posts) >= 2) {
 				$ref_post = array_shift($posts);
@@ -716,6 +719,25 @@ function add_book_columns($columns){
 }
 
 /**
+ * Add the column headers which are to be sortable
+ *
+ * @param array   The array of column labels
+ * @return array 	The new array of column names
+ */
+function add_book_sortable_columns($columns){
+	return array(
+		// 'isbn' => 'isbn_prod', // CUSTOM
+		// 'name' => 'Name',
+		'authors' => 'authors',  // CUSTOM
+		'location' => 'location',  // CUSTOM
+		'genres' => 'genres',  // CUSTOM
+		'periods' => 'periods',
+		// 'rating' => 'rating',  // CUSTOM
+		'featured' => 'Featured',
+	);
+}
+
+/**
  * Add the custom column data to the WooCommerce Product admin table
  *
  * @param string 	The current column name
@@ -734,7 +756,7 @@ function add_book_columns_content($column, $id){
 		foreach($names as $name) {
 			echo '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
 					esc_html(sanitize_title($name)) . '&post_type=product')) . ' ">' .
-					esc_html($name) . '</a>, <br/>';
+					esc_html($name) . '</a><br/>';
 		}
 	}
 	elseif ($column == 'location') {
@@ -763,6 +785,35 @@ function add_book_columns_content($column, $id){
 	// 	$rating_html .= '</div>';
 	// 	echo $rating_html;
 	// }
+}
+
+
+/**
+ * How the columns should be sorted
+ */
+function book_orderby($clauses, $query) {
+	require('utilities.php');
+
+	global $wpdb;
+
+  $orderby = $query->get('orderby');
+
+	if ('authors' === $orderby || 'periods' === $orderby || 'genres' === $orderby ||
+			'location' === $orderby) {
+
+		$id = get_toplevel_term($orderby);
+
+		$clauses['join'] .= "
+			LEFT OUTER JOIN {$wpdb->term_relationships} ON {$wpdb->posts}.ID={$wpdb->term_relationships}.object_id
+			LEFT OUTER JOIN {$wpdb->term_taxonomy} USING (term_taxonomy_id)
+			LEFT OUTER JOIN {$wpdb->terms} USING (term_id)";
+		$clauses['where'] .= " AND (parent = {$id})";
+		$clauses['groupby'] = "object_id";
+		$clauses['orderby'] = "GROUP_CONCAT({$wpdb->terms}.name ORDER BY name ASC) ";
+		$clauses['orderby'] .= ('ASC' == strtoupper($query->get('order'))) ? 'ASC' : 'DESC';
+	}
+
+	return $clauses;
 }
 
 /**
