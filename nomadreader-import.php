@@ -792,7 +792,7 @@ function add_book_columns_content($column, $id){
  * How the columns should be sorted
  */
 function book_orderby($clauses, $query) {
-	require('utilities.php');
+	require_once('utilities.php');
 
 	global $wpdb;
 
