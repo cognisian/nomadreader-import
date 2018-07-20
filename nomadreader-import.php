@@ -484,7 +484,7 @@ function update_ext_links() {
 	}
 
 	$url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
-					admin_url('admin.php?page=nomadreader_update_ext_links'));
+					admin_url('admin.php?page=update_ext_links'));
 	wp_redirect($url);
 	die();
 }
@@ -561,7 +561,7 @@ function remove_duplicate_books() {
 	}
 
 	$url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
-					admin_url('admin.php?page=' . 'nomadreader_remove_duplicate_books'));
+					admin_url('admin.php?page=' . 'remove_duplicate_books'));
 	wp_redirect($url);
 	die();
 }
