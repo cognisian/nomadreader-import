@@ -152,14 +152,14 @@ function create_post_object_terms($post_id, $terms, $tags = '', $rating = 0.0) {
 	}
 	wp_set_object_terms($post_id, $book['tags'], 'product_tag', true);
 
-	// Set Rating
-	$woo_rating = (int)$rating;
-	if ($woo_rating > 0) {
-		if ($woo_rating > 5) { $woo_rating = 5; }
-		$woo_stars = 'rated-'.$woo_rating;
-		$res = wp_set_object_terms($post_id, array($woo_stars), 'product_visibility');
-		wp_update_term_count_now($woo_stars, 'product_visibility');
-	}
+	// // Set Rating
+	// $woo_rating = (int)$rating;
+	// if ($woo_rating > 0) {
+	// 	if ($woo_rating > 5) { $woo_rating = 5; }
+	// 	$woo_stars = 'rated-'.$woo_rating;
+	// 	$res = wp_set_object_terms($post_id, array($woo_stars), 'product_visibility');
+	// 	wp_update_term_count_now($woo_stars, 'product_visibility');
+	// }
 
 	return $res;
 }
@@ -167,35 +167,37 @@ function create_post_object_terms($post_id, $terms, $tags = '', $rating = 0.0) {
 /**
  * Update the Metadata for the product in wooCommerce specific data
  *
- * @param array $img An assoc array of image properties (file, width, height)
- * @param int $parent_post Associate a book cover image with product
+ * @param int $post_id Associate a book cover image with product
+ * @param $isbn Assoicate the ISBN to the post
+ * @param $rating Assoicate the book rating to the post
  * @param string $region Which Amazon region should URL point to
  */
-function create_post_metadata($post_id, $isbn, $region = 'com') {
+function create_post_metadata($post_id, $isbn, $rating = 0.0, $region = 'com') {
 
 	// assigning the meta keys to the product
 	add_post_meta($post_id, 'isbn_prod', $isbn, true);
 
 	// Update the WooCommerce fields (_product_url being the field controlling
 	// the URL assigned to the Buy button)
-	update_post_meta( $post_id, '_visibility', 'visible' );
-	update_post_meta( $post_id, '_stock_status', 'instock');
-	update_post_meta( $post_id, 'total_sales', '0');
-	update_post_meta( $post_id, '_downloadable', 'no');
-	update_post_meta( $post_id, '_virtual', 'no');
-	update_post_meta( $post_id, '_regular_price', "10" );
-	update_post_meta( $post_id, '_sale_price', "" );
-	update_post_meta( $post_id, '_purchase_note', "" );
-	update_post_meta( $post_id, '_featured', "no" );
-	update_post_meta( $post_id, '_sku', "");
-	update_post_meta( $post_id, '_product_attributes', array());
-	update_post_meta( $post_id, '_sale_price_dates_from', "" );
-	update_post_meta( $post_id, '_sale_price_dates_to', "" );
-	update_post_meta( $post_id, '_price', "" );
-	update_post_meta( $post_id, '_sold_individually', "" );
-	update_post_meta( $post_id, '_manage_stock', "no" );
-	update_post_meta( $post_id, '_backorders', "no" );
-	update_post_meta( $post_id, '_stock', "" );
+	update_post_meta($post_id, '_visibility', 'visible');
+	update_post_meta($post_id, '_stock_status', 'instock');
+	update_post_meta($post_id, 'total_sales', '0');
+	update_post_meta($post_id, '_downloadable', 'no');
+	update_post_meta($post_id, '_virtual', 'no');
+	update_post_meta($post_id, '_regular_price', "10");
+	update_post_meta($post_id, '_sale_price', "");
+	update_post_meta($post_id, '_purchase_note', "");
+	update_post_meta($post_id, '_featured', "no");
+	update_post_meta($post_id, '_sku', "");
+	update_post_meta($post_id, '_product_attributes', array());
+	update_post_meta($post_id, '_sale_price_dates_from', "");
+	update_post_meta($post_id, '_sale_price_dates_to', "");
+	update_post_meta($post_id, '_price', "");
+	update_post_meta($post_id, '_sold_individually', "");
+	update_post_meta($post_id, '_manage_stock', "no");
+	update_post_meta($post_id, '_backorders', "no");
+	update_post_meta($post_id, '_stock', "");
+	update_post_meta($post_id, '_wc_average_rating', $rating);
 
 	// Load the values from wordpress options
 	$options = get_option(NR_OPT_AWS_TOKENS_CONFIG);

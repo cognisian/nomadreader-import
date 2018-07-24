@@ -1,5 +1,10 @@
 <?php
 /**
+ * Encapsulate a book given properties from a CSV or JSON or alternatively
+ * loaded from WordPRess via ISBN
+ */
+
+/**
  * Class to encapsulate the properties of book
  */
 class Book {
@@ -93,33 +98,76 @@ class Book {
   }
 
   /**
-   * Instantiate a Book given its ISBN
+   * Instantiate a Book given its ISBN from WprdPress datasource
    *
    * @param string $isbn  ISBN of book to retrieve from WordPress
-   * @return Book         An instantiated Book
+   * @return Book|bool    An instantiated Book or False if error
    */
   public function load_book($isbn) {
 
-    // Get the list of ISBNs
-		$results = $wpdb->get_results("
-			SELECT post_id
-			FROM {$wpdb->prefix}postmeta
-			WHERE meta_key = 'isbn_prod' and meta_value = {$isbn}
-		");
+    require_once('utilities.php');
 
-    if (count($result) == 1) {
-      $row = $result[0];
-			$args = array(
-		    'meta_key' 				=> 'isbn_prod',
-				'meta_value' 			=> $row->isbn,
-		    'post_type' 			=> 'product',
-		    'post_status' 		=> 'publish',
-		    'posts_per_page' 	=> 1,
-			);
-  		$book_post = get_posts($args);
+    $row = $result[0];
+  	$args = array(
+      'meta_key' 				=> 'isbn_prod',
+  		'meta_value' 			=> $isbn,
+      'post_type' 			=> 'product',
+      'post_status' 		=> 'publish',
+      'posts_per_page' 	=> 1,
+  	);
+  	$book_post = get_posts($args);
+    if (!empty($book_post)) {
 
-      // return new Book($isbn, $title, $authors, $summary, $rating, $locations,
-      //                 $genres, $periods, $tags, $image);
+      $auth_id = get_toplevel_term('authors');
+      $authors = get_post_terms($book_post->ID, $auth_id, array('fields' => 'name'));
+      if (is_wp_error($authors)) {
+        $authors = '';
+      }
+
+      $genres_id = get_toplevel_term('genres');
+      if (is_wp_error($genres)) {
+        $genres = '';
+      }
+      $genres = get_post_terms($book_post->ID, $genres_id, array('fields' => 'name'));
+
+      $period_id = get_toplevel_term('periods');
+      $periods = get_post_terms($book_post->ID, $period_id, array('fields' => 'name'));
+      if (is_wp_error($periods)) {
+        $periods = '';
+      }
+
+      $loc_id = get_toplevel_term('location');
+      $locations = get_post_terms($book_post->ID, $loc_id, array('fields' => 'name'));
+      if (is_wp_error($locations)) {
+        $locations = '';
+      }
+
+      $tag_id = get_toplevel_term('product_tag');
+      $tags = get_post_terms($book_post->ID, $tag_id, array('fields' => 'name'));
+      if (!is_wp_error($tags)) {
+        $tags = ', '.join($tags);
+      }
+      else {
+        $tags = '';
+      }
+
+      $rating = get_post_terms($book_post->ID, '_wc_average_rating', array('fields' => 'name'));
+      if (is_wp_error($rating)) {
+        $rating = 0.0;
+      }
+
+      $image = '';
+      $thumb_id = get_post_meta($book_post->ID, '_thumbnail_id', True);
+  		$attachment = get_post($thumb_id);
+  		if ($attachment) {
+  			$image = $attachment->guid;
+  		}
+
+      return new Book($isbn, $book_post->title, $authors, $book_post->summary, $rating, $locations,
+                      $genres, $periods, $tags, $image, $book_post->excerpt);
+    }
+    else {
+      return False;
     }
   }
 
