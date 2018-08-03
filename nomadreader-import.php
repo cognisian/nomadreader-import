@@ -839,15 +839,24 @@ function add_book_columns_style() {
  */
 function nomadreader_books_enqueue($hook) {
 
-    // Twitter Bootstrap JS
-    wp_register_script('prefix_bootstrap',
-			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js');
-    wp_enqueue_script('prefix_bootstrap');
+	$screen = get_current_screen();
 
-    // Twitter Bootstrap CSS
-    wp_register_style('prefix_bootstrap',
-			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css');
-    wp_enqueue_style('prefix_bootstrap');
+  if (strpos($screen->base, 'nomadreader-import') === false ||
+			strpos($screen->base, 'nomadreader_export_books') === false ||
+			strpos($screen->base, 'update_ext_links') === false ||
+			strpos($screen->base, 'remove_duplicate_books') === false) {
+    return;
+	}
+
+  // Twitter Bootstrap JS
+  wp_register_script('prefix_bootstrap',
+		'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js');
+  wp_enqueue_script('prefix_bootstrap');
+
+  // Twitter Bootstrap CSS
+  wp_register_style('prefix_bootstrap',
+		'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css');
+  wp_enqueue_style('prefix_bootstrap');
 }
 
 ?>

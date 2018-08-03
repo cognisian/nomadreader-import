@@ -4,7 +4,7 @@
  *
  * @package Nomadreader_Import_Master
  */
-require('Book.php');
+require_once('Book.php');
 
 /**
  * Test different instantiation of Book
@@ -39,9 +39,9 @@ class BookTest extends WP_UnitTestCase {
 	protected $test_rating = 4.5;
 
 	// Location fixture
-	protected $test_locations = "Kabul, Afghanistan; San Francisco, USA; Paris, France";
-	protected $test_locations_array = array('Kabul, Afghanistan', 'San Francisco, USA',
-																					'Paris, France');
+	protected $test_locations = "Kabul, Afghanistan, San Francisco, USA, Paris, France";
+	protected $test_locations_array = array('Kabul', 'Afghanistan', 'San Francisco', 'USA',
+																					'Paris', 'France');
 
 	// Genres Fixture
 	protected $test_genres = "Fiction & Literature, Mystery";
@@ -52,7 +52,8 @@ class BookTest extends WP_UnitTestCase {
 	protected $test_periods_array = array('1900s', '2000s');
 
 	// Tags fixture
-	protected $test_tags = '';
+	protected $test_tags = 'Booker, Hugo, Pulitzer';
+	protected $test_tags_array = array('Booker', 'Hugo', 'Pulitzer');
 
 	// Cover fixture
 	protected $test_cover = "https://images-na.ssl-images-amazon.com/images/I/51LPx-tr1hL.jpg";
@@ -67,8 +68,8 @@ class BookTest extends WP_UnitTestCase {
 		$book = new Book($this->test_isbn, $this->test_title, $this->test_authors_array,
 											$this->test_summary, $this->test_rating,
 											$this->test_locations_array, $this->test_genres_array,
-											$this->test_periods_array, $this->test_tags, $this->test_cover,
-											$this->test_excerpt);
+											$this->test_periods_array, $this->test_tags_array,
+											$this->test_cover, $this->test_excerpt);
 
 		$this->assertEquals($this->test_isbn, $book->isbn);
 		$this->assertEquals($this->test_title, $book->title);
@@ -79,7 +80,7 @@ class BookTest extends WP_UnitTestCase {
 		$this->assertSame($this->test_locations_array, $book->locations);
 		$this->assertSame($this->test_genres_array, $book->genres);
 		$this->assertSame($this->test_periods_array, $book->periods);
-		$this->assertEquals($this->test_tags, $book->tags);
+		$this->assertSame($this->test_tags_array, $book->tags);
 		$this->assertEquals($this->test_cover, $book->cover);
 	}
 
@@ -99,6 +100,7 @@ class BookTest extends WP_UnitTestCase {
 		$this->assertSame($this->test_locations_array, $book->locations);
 		$this->assertSame($this->test_genres_array, $book->genres);
 		$this->assertSame($this->test_periods_array, $book->periods);
+		$this->assertSame($this->test_tags_array, $book->tags);
 	}
 
 	/**
@@ -217,4 +219,20 @@ class BookTest extends WP_UnitTestCase {
 		$this->assertEquals(3.7, $books[0]->rating, 0.1);
 
 	}
+
+	/**
+	 * Test a Book is loaded from WordPress
+	 */
+	public function test_load_book_from_wordpress() {
+
+		// $books = Book::parse_json(getcwd(). '/tests/data/test-book-city-country-fmt.json');
+		//
+		// $this->assertEquals(1, count($books));
+		//
+		// $this->assertEquals('000721829X', $books[0]->isbn);
+		// $this->assertEquals(array("London, England"), $books[0]->locations);
+		// $this->assertEquals(3.7, $books[0]->rating, 0.1);
+
+	}
+
 }
