@@ -4,6 +4,12 @@
  * loaded from WordPRess via ISBN
  */
 
+defined('ABSPATH') || die();
+
+// if ( 'no' === get_option( 'woocommerce_enable_review_rating' ) ) {
+//   return;
+// }
+
 /**
  * Class to encapsulate the properties of book
  */
@@ -104,7 +110,7 @@ class Book {
    * @return Book|bool    An instantiated Book or False if error
    */
   static public function load_book($isbn) {
-    
+
   	$args = array(
       'meta_key' 				=> 'isbn_prod',
   		'meta_value' 			=> $isbn,
@@ -117,21 +123,21 @@ class Book {
 
       $book = $book_post[0];
 
+      // Load the product category terms and split into proper groups
       $post_terms = wp_get_post_terms($book->ID, 'product_cat', array('fields' => 'all'));
+      $authors = Book::filter_terms_by_name($post_terms, 'authors');
+      $genres = Book::filter_terms_by_name($post_terms, 'genres');
+      $periods = Book::filter_terms_by_name($post_terms, 'periods');
+      $locations = Book::filter_terms_by_name($post_terms, 'locations');
 
-      // Filter to get list of term names
-      $authors = Book::filter_terms($post_terms, 'authors');
-      $genres = Book::filter_terms($post_terms, 'genres');
-      $periods = Book::filter_terms($post_terms, 'periods');
-      $locations = Book::filter_terms($post_terms, 'locations');
-
+      // Load the product tag terms
       $post_tags = wp_get_post_terms($book->ID, 'product_tag', array('fields' => 'names'));
 
       $rating = 0.0;
-      // $rating = wp_get_post_terms($book->ID, '_wc_average_rating', array('fields' => 'name'));
-      // if (is_wp_error($rating)) {
-      //   $rating = 0.0;
-      // }
+      $rating = (float)get_post_meta($book->ID, '_wc_average_rating', true);
+      if (empty($rating)) {
+        $rating = 0.0;
+      }
 
       $image = '';
       $thumb_id = get_post_meta($book->ID, '_thumbnail_id', True);
@@ -163,27 +169,47 @@ class Book {
   }
 
   /**
-   * Given ALL terms for a post, filter to retrieve the list of names whose
-   * parent term ID is given
+   * Given ALL terms for a post, filtered to retrieve the list of child term
+   * names whose parent term slug matches given
    *
-   * @param array $post_terms         The set of WP_Term objects
+   * @param array $post_terms         The set of WP_Term objects to c
    * @param string $parent_term_name  The term_id to check the parent property
    * @return array                    The list term names whose parent matches the
    * provided $parent_term_name
    */
-  static public function filter_terms($post_terms, $parent_term_name) {
+  static public function filter_terms_by_name($post_terms, $parent_term_name) {
 
-    $parent_term_id = get_toplevel_term($parent_term_name);
-    $terms = array_filter($post_terms, function($v) use ($parent_term_id) {
-      $res = False;
-      if ($v->parent == $parent_term_id) {
-        $res = True;
-      }
-      return $res;
-    });
-    $term_names = array_map(function($v) {
-      return $v->name;
-    }, $terms);
+    $term_names = array();
+
+    if (!empty($post_terms)) {
+      // $parent_term_id = get_toplevel_term($parent_term_name);
+    	$args_main = array(
+    		'name'										 => $parent_term_name,
+    		'parent'                   => 0,
+    		'orderby'                  => 'term_group',
+    		'hide_empty'               => false,
+    		'hierarchical'             => 1,
+    		'taxonomy'                 => 'product_cat',
+    		'pad_counts'               => false
+    	);
+    	$term = get_terms($args_main);
+    	if (!is_wp_error($term)) {
+    		$parent_term_id = $term[0]->term_id;
+        $terms = array_filter($post_terms, function($v) use ($parent_term_id) {
+          $res = False;
+          if ($v->parent == $parent_term_id) {
+            $res = True;
+          }
+          return $res;
+        });
+        $term_names = array_map(function($v) {
+          return $v->name;
+        }, $terms);
+    	}
+    	else {
+    		// TODO ERROR processing
+    	}
+    }
 
     return $term_names;
   }
@@ -203,7 +229,7 @@ class Book {
    *                                ie: 'Paris, France; London, England'
    * @param array|string $genres    List of genre names
    * @param array|string $periods   List of period names
-   * @param string $tags            List of comma seperated words
+   * @param array|string $tags      List of comma seperated words
    * @param string $cover           An URL for the image of the book cover
    * @param string $excerpt         Short desc of book.  Optional if empty then
    *                                take first sentence of summary. Optional
@@ -249,6 +275,7 @@ class Book {
     if ($post_id !== False) {
       $this->create_product_terms($post_id);
       $this->create_attachment_post($post_id);
+      $this->create_rating_comment($post_id);
       // TODO WooCommerce check
       $this->create_product_metadata($post_id);
     }
@@ -268,6 +295,7 @@ class Book {
 
     $result = 0;
 
+    // Find the post associated with ISBN number to update
     $args = array(
       'meta_key' 				=> 'isbn_prod',
   		'meta_value' 			=> $this->isbn,
@@ -280,11 +308,15 @@ class Book {
 
       $book = $book_post[0];
 
-      // Update the post details and associated terms and tags
+      // Update the post details and link terms and tags, replacing
+      // previous terms and tags
       $result = $this->update_product_post($book->ID);
 
-      // Update the attachment
+      // Now update the terms, attachment and ratings
       if ($result > 0) {
+
+        $result = $this->link_terms_to_post($book->ID, False);
+
         $args = array(
           'post_type' 			=> 'attachment',
           'post_status'     => "inherit",
@@ -294,6 +326,10 @@ class Book {
       	$attach_post = get_posts($args);
         if (count($attach_post) == 1) {
           $result = $this->update_attachment_post($attach_post[0]->ID, $book->ID);
+        }
+
+        if ($result > 0) {
+          $result = $this->update_rating_comment($book->ID);
         }
       }
     }
@@ -319,22 +355,18 @@ class Book {
    */
   private function create_product_post() {
 
-  	//Create product
+  	// Create product
   	$post = array(
   		'post_author' => 1,
   		'post_content' => $this->summary,
   		'post_excerpt' => $this->excerpt,
   		'post_status' => "publish",
   		'post_title' => $this->title,
-  		// 'post_parent' => '',
   		'post_type' => "product",
-      // 'tags_input' => array(tag_name),
-      // 'tax_input' => array(taxonomy_name => array(tags)),
-      // 'meta_input' => array(fieldname => value),
   	);
   	$post_id = wp_insert_post($post);
     if ($post_id != False) {
-      // assigning the meta keys to the product
+      // assigning the meta key ISBN to the product
     	add_post_meta($post_id, 'isbn_prod', $this->isbn, true);
     }
 
@@ -355,16 +387,10 @@ class Book {
   		'post_excerpt' => $this->excerpt,
   		'post_title'   => $this->title,
       'tags_input'   => $this->tags,
-      'tax_input'    => array(
-        'product_cat'   => array_merge($this->authors,
-                            $this->genres,
-                            $this->periods,
-                            $this->locations
-      ))
   	);
-  	$post_id = wp_update_post($post);
+  	$upd_post_id = wp_update_post($post);
 
-  	return $post_id;
+  	return $upd_post_id;
   }
 
   /**
@@ -378,30 +404,14 @@ class Book {
     if (!taxonomy_exists('product_type')) {
   		register_taxonomy('product_type', 'product');
   	}
-  	wp_set_object_terms($post_id, 'external', 'product_type');
+  	wp_set_post_terms($post_id, 'external', 'product_type');
 
-  	// Assign the terms to the product
-    $terms = array_merge($this->authors, $this->genres, $this->periods,
-                          $this->locations);
-  	$res = wp_set_object_terms($post_id, $terms, 'product_cat', true);
-  	wp_update_term_count_now($terms, 'product_cat');
-
-  	// Update the product tags (ensure the woocommerce product_tag exists)
+    // Update the product tags (ensure the woocommerce product_tag exists)
   	if (!taxonomy_exists('product_tag')) {
   		register_taxonomy('product_tag', 'product');
   	}
-  	wp_set_object_terms($post_id, $this->tags, 'product_tag', true);
 
-  	// // Set Rating
-  	// $woo_rating = (int)$rating;
-  	// if ($woo_rating > 0) {
-  	// 	if ($woo_rating > 5) { $woo_rating = 5; }
-  	// 	$woo_stars = 'rated-'.$woo_rating;
-  	// 	$res = wp_set_object_terms($post_id, array($woo_stars), 'product_visibility');
-  	// 	wp_update_term_count_now($woo_stars, 'product_visibility');
-  	// }
-
-  	return $res;
+    return $this->link_terms_to_post($post_id);
   }
 
   /**
@@ -434,7 +444,6 @@ class Book {
   	update_post_meta($post_id, '_manage_stock', "no");
   	update_post_meta($post_id, '_backorders', "no");
   	update_post_meta($post_id, '_stock', "");
-  	// update_post_meta($post_id, '_wc_average_rating', $rating);
 
   	// Load the values from wordpress options
   	$options = get_option(NR_OPT_AWS_TOKENS_CONFIG);
@@ -470,6 +479,7 @@ class Book {
   		'guid' => $this->cover,
   	);
   	$attachment_id = wp_insert_attachment($attachment);
+    // TODO need to this with Thumbnails as well?
 
     $metadata = wp_generate_attachment_metadata($attachment_id, $this->cover);
   	$metadata['file'] = $name;
@@ -493,36 +503,181 @@ class Book {
    * This should also generate the meta data for the attachment
    *
    * @param int $attach_id    The attachment post ID to update
-   * @param int $parent_post  Associate a book cover image with product
+   * @param int $parent_post  Associate a book cover image with product post
+   * @return int              Return 0 if update post failed or the post ID of
+   * updated post
    */
-  private function update_attachment_post($attach_id, $parent_post = 0) {
+  private function update_attachment_post($attach_id, $parent_post_id = 0) {
 
-    $name = basename($this->cover);
+    // Delete the old attachment post and add new one
+  	$result = wp_delete_attachment($attach_id, true);
+    if ($result !== False) {
+      $result = $this->create_attachment_post($parent_post_id);
+    }
 
-    // Update product
-  	$post = array(
-      'ID'          => $attach_id,
-  		'post_title'  => preg_replace('/\.[^.]+$/', '', $name),
-      'post_parent' => $parent_post,
-      'guid'        => $this->cover,
+  	return $result;
+  }
+
+  /**
+   * Create the comment and meta data associated with Rating
+   *
+   * @param int $parent_post  Associate a rating cooment with product
+   */
+  private function create_rating_comment($parent_post = 0) {
+
+    $comment_id = 0;
+
+    $curr_user = wp_get_current_user();
+
+    // Dont add new comment if one already exists
+    $comment = get_comments(array('post_id' => $parent_post));
+    if (empty($comment)) {
+      $args = array(
+      	'comment_post_ID'      => $parent_post,
+      	'comment_author'       => $curr_user->first_name . ' ' . $curr_user->last_name,
+      	'comment_author_email' => '',
+      	'comment_author_url'   => '',
+      	'comment_content'      => 'Rating Comment',
+      	'comment_type'         => '',
+      	'comment_parent'       => 0,
+        'comment_approved'     => 1,
+      	'user_id'              => $curr_user->ID,
+      );
+      $comment_id = wp_new_comment($args, true);
+      if (!is_wp_error($comment_id) && $comment_id > 0) {
+        add_comment_meta($comment_id, 'rating', $this->rating, true);
+        add_post_meta($parent_post, '_wc_average_rating', $this->rating);
+      }
+    }
+
+  	return $comment_id;
+  }
+
+  /**
+   * Update the comment and meta data associated with Rating
+   *
+   * @param int $parent_post  Associate a rating cooment with product
+   */
+  private function update_rating_comment($parent_post = 0) {
+
+    $result = False;
+
+    // Find comment for post
+    $comment = get_comments(array('post_id' => $parent_post));
+    if (!empty($comment)) {
+      update_comment_meta($comment[0]->comment_ID, 'rating', $this->rating, true);
+      update_post_meta($parent_post, '_wc_average_rating', $this->rating);
+      $result = True;
+    }
+
+    return $result;
+  }
+
+  /**
+   * Link existing term names to post, either replacing or appending the post terms
+   *
+   * @param string $post_id  The ID of the post to updateParent term for terms
+   * @param array $append    Flag indicating whether terms should be added (true) or
+   * replace (false) previous terms
+   */
+  private function link_terms_to_post($post_id, $append=True) {
+
+    // Assign the terms to the product
+    $terms = array_merge($this->authors, $this->genres, $this->periods,
+                          $this->locations);
+    if (!empty($terms)) {
+
+      // Create the terms, if they do not exist
+    	$this->create_terms($this->authors, 'Authors');
+      $this->create_terms($this->genres, 'Genres');
+      $this->create_terms($this->periods, 'Periods');
+      $this->create_terms($this->locations, 'Locations');
+
+      // Update the post terms, replacing the previous terms
+    	wp_set_post_terms($post_id, $terms, 'product_cat', $append);
+    	wp_update_term_count_now($terms, 'product_cat');
+    }
+
+    // Assign Tags to the product
+    if (!empty($this->tags)) {
+      // Update post tags, replacing the previous tags
+    	wp_set_post_terms($post_id, $this->tags, 'product_tag', $append);
+      wp_update_term_count_now($this->tags, 'product_tag');
+    }
+  }
+
+  /**
+   * Create the terms with the specified parent
+   *
+   * @param array $terms              The array of term names to create
+   * @param string $parent_term_name  Parent term for terms
+   */
+  private function create_terms($terms, $parent_term_name='') {
+
+    $product_terms = array();
+
+    foreach($terms as $term) {
+      $parent_term_id = $this->toplevel_term($parent_term_name);
+
+      $temp = term_exists($term, 'product_cat', $parent_term_id);
+  		if (($temp === null || $temp === 0) || empty($temp)) {
+  			// Create new subterm
+  			$new_subterm = wp_insert_term($term, 'product_cat',
+  																		array('parent' => $parent_term_id));
+  			if (!is_wp_error($new_subterm)) {
+  				$product_terms[] = array(
+  					'term_id'						=> (int)$new_subterm['term_id'],
+  					'term_taxonomy_id'	=> (int)$new_subterm['term_taxonomy_id'],
+  					'term_name'					=> $term,
+  				);
+  			}
+      }
+      else {
+        $product_terms[] = $temp;
+      }
+    }
+
+    return $product_terms;
+  }
+
+  /**
+   * Given a term name check if it exists as top level term (one of
+   * author, location, genres, periods).  If the top level term does
+   * not exist create it.
+   *
+   * @param string $termname The top level term name to retrieve, or
+   * create if not exists
+   * @return int The term ID
+   */
+  private function toplevel_term($termname = '') {
+
+  	$result = array();
+
+  	$args_main = array(
+  		'name'										 => $termname,
+  		'parent'                   => 0,
+  		'orderby'                  => 'term_group',
+  		'hide_empty'               => false,
+  		'hierarchical'             => 1,
+  		'taxonomy'                 => 'product_cat',
+  		'pad_counts'               => false
   	);
-  	$post_id = wp_update_post($post, true);
+  	$term = get_terms($args_main);
+  	$term_id = 0;
+  	if (!is_wp_error($term)) {
+  		if (empty($term)) {
+  			$temp = wp_insert_term(ucfirst($termname), 'product_cat',
+  															array('slug' => $termname));
+  			if (!empty($temp)) {
+  				$term_id = $temp['term_id'];
+  			}
+  		}
+  		else {
+  			$term_id = $term[0]->term_id;
+  		}
+  	}
 
-    $metadata = wp_generate_attachment_metadata($attach_id, $this->cover);
-  	$metadata['file'] = $name;
-  	$metadata['sizes'] = array(
-  		'full' => array(
-  			'file'   => $name,
-  			'height' => 0,
-  			'width'  => 0
-  		)
-  	);
-    wp_update_attachment_metadata($attach_id, $metadata);
-
-  	// Add the image as product image
-  	update_post_meta($parent_post, '_thumbnail_id', $attach_id);
-
-  	return $post_id;
+  	return $term_id;
   }
 
   /**

@@ -1,6 +1,8 @@
 <?php
 /**
- *
+ * WordPress UNitTest class to create the necessary posts/meta data to create a
+ * WooCommerce product post with thumbnail image and add the image to the
+ * Media library
  */
 
 /**
@@ -32,45 +34,23 @@ class WP_UnitTest_Factory_For_Product_Image extends WP_UnitTest_Factory_For_Atta
    */
   function create_object($args) {
 
-    if (isset($args['file']) && isset($args['height']) && isset($args['width'])) {
+    $attachment_id = wp_insert_attachment($args);
+    
+    $metadata = wp_generate_attachment_metadata($attachment_id, $args['guid']);
+  	$metadata['file'] = basename($args['guid']);
+  	$metadata['sizes'] = array(
+  		'full' => array(
+  			'file'   => basename($args['guid']),
+  			'height' => 0,
+  			'width'  => 0
+  		)
+  	);
+    wp_update_attachment_metadata($attachment_id, $metadata);
 
-      $img['file'] = $args['file'];
-      unset($args['file']);
-      $img['height'] = $args['height'];
-      unset($args['height']);
-      $img['width'] = $args['width'];
-      unset($args['width']);
-
-      $attachment_id = wp_insert_attachment($args);
-
-      $metadata = wp_generate_attachment_metadata($attachment_id, $img['file']);
-    	$metadata['file'] = basename($img['file']);
-    	$metadata['sizes'] = array(
-    		'full' => array(
-    			'file'   => basename($img['file']),
-    			'height' => $img['height'],
-    			'width'  => $img['width']
-    		)
-    	);
-      wp_update_attachment_metadata($attachment_id, $metadata);
-    }
-    else {
-      $attachment_id = wp_insert_attachment($args);
-    }
-
-  	// Add the image as product image
+    // Add the image as product image
   	add_post_meta($args['post_parent'], '_thumbnail_id', $attachment_id, true);
 
     return $attachment_id;
-  }
-
-  function update_object($post_id, $fields) {
-      $fields['ID'] = $post_id;
-      return wp_update_post($fields);
-  }
-
-  function get_object_by_id($post_id) {
-      return get_post($post_id);
   }
 
 }
