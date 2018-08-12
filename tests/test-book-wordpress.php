@@ -1,4 +1,7 @@
 <?php
+
+defined('WPINC') || die();
+
 /**
  * Class BookWordPressTest
  *

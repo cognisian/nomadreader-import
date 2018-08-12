@@ -1,4 +1,8 @@
 <?php
+
+defined('WPINC') || die();
+
+
 /**
  * Class BookTest
  *

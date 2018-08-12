@@ -1,10 +1,14 @@
 <?php
 /**
- * Encapsulate a book given properties from a CSV or JSON or alternatively
- * loaded from WordPRess via ISBN
+ * Module Name: NomadReader Books
+ * Plugin URI: https://www.nomadreader.com/
+ * Description: Bok class to wrap saving/loading Book data to WordPress
+ * Version: 1.0.0
+ * Author: Sean Chalmers seandchalmers@yahoo.ca
  */
 
-defined('ABSPATH') || die();
+defined('WPINC') || die();
+
 
 // if ( 'no' === get_option( 'woocommerce_enable_review_rating' ) ) {
 //   return;
@@ -267,7 +271,7 @@ class Book {
    * No checks will be done to determine if the book previously exists as a
    * product post.
    *
-   * @return bool   Return post ID of the inserted Book, otherwise 0
+   * @return int   Return post ID of the inserted Book, otherwise 0
    */
   public function insert() {
 
@@ -332,6 +336,32 @@ class Book {
           $result = $this->update_rating_comment($book->ID);
         }
       }
+    }
+
+    return $result;
+  }
+
+  /**
+   * Determines if this book already exists in WordPress
+   *
+   * @return bool   Returns True iff 1 published product post with product meta
+   * isbn_prod exists and equals this book's isbn
+   */
+  public function exists() {
+
+    $result = False;
+
+    // Find the post associated with ISBN number to update
+    $args = array(
+      'meta_key' 				=> 'isbn_prod',
+  		'meta_value' 			=> $this->isbn,
+      'post_type' 			=> 'product',
+      'post_status' 		=> 'publish',
+      'posts_per_page' 	=> -1,
+  	);
+  	$book_post = get_posts($args);
+    if (count($book_post) == 1) {
+      $result = True;
     }
 
     return $result;

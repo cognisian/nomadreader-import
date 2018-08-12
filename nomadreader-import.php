@@ -9,9 +9,14 @@
  * Author: Sean Chalmers seandchalmers@yahoo.ca
  */
 
-if (!defined('WPINC')) {
-	die();
-}
+defined('WPINC') || die();
+
+
+require_once("utilities.php");
+require_once("config.php");
+
+require_once("Book.php");
+
 
 define('PLUGIN_NAME', 'nomadreader-import');
 define('PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -21,17 +26,20 @@ define('NR_MENU_SLUG', 'nomadreader-import');
 
 define('NR_AWS_TOKENS_MENU_ID', 'nr-aws-tokens');
 
+// CONFIG SECTIONS defns
 define('NR_OPT_AWS_TOKENS_GRP', 'nr-aws-tokens-group');
 define('NR_OPT_AWS_TOKENS_CONFIG', 'nr-aws-tokens-config');
 
 define('NR_OPT_AWS_TOKENS_SECT', 'nr-aws-tokens-section');
 define('NR_OPT_AFFILIATE_SECT', 'nr-affiliate-section');
 
+// CONFIG FIELDS defns
 define('NR_AWS_ACCESS_TOKEN', 'aws-access-token');
 define('NR_AWS_SECRET_TOKEN', 'aws-secret-token');
 define('NR_AWS_AFFILIATE_TAG', 'aws-affiliate-tag');
 define('NR_AMZN_BUY_BTN_TEXT', 'nr-buy-button-text');
 
+// enc stuff
 define('ENC_K', '%reda-on_the-go@');
 define('ENC_V', 'koob^7915~trval+');
 define('ENC_M', 'AES-128-CBC');
@@ -60,7 +68,6 @@ add_action('admin_print_styles', 'add_book_columns_style');
  * Entry point to create the NomadReader Books plugin menus
  */
 function nomadreader_books() {
-	include("config.php");
 
 	// Main menu for NomadReader functions
 	add_menu_page('NomadReader Books', 'NomadReader', 1, NR_MENU_SLUG,
@@ -197,12 +204,7 @@ function nomadreader_remove_duplicate_books() {
  */
 function export_books() {
 
-	if (ini_get('safe_mode')) {
-		ini_set('max_execution_time', 0);
-	}
-	else {
-		set_time_limit(0);
-	}
+	disable_execution_timer();
 
 	$result = '';
 	$msgs = array();
@@ -222,112 +224,66 @@ function export_books() {
 	}
 	$file_name = 'nomadreader-books' . $file_type;
 
+	// CSV record layout
+	$csv_rec = '%1$s, "%2$s", "%3$s", "%4$s", "%5$.1f", "%6$s", "%7$s", "%8$s", "%9$s", %10$s';
+	// CSV header and book data to export
 	$csv = [];
 	$csv[] = 'ISBN, Title, Authors, Summary, Rating, Location, Genres, Periods, Tags, Cover';
-	$csv_rec = '%1$s, "%2$s", "%3$s", "%4$s", "%5$s", "%6$s", "%7$s", "%8$s", "%9$s", %10$s';
-
 
 	// Get the list of published product posts
-	$args = array(
-		'orderby'          => 'ID',
-		'order'            => 'DESC',
-		'posts_per_page' 	 => -1,
-		'post_type'        => 'product',
-		'post_status'      => 'publish',
-	);
-	$books = get_posts($args);
+	$isbns = get_all_isbns();
+	if (!empty($isbns)) {
+		foreach($isbns as $isbn) {
 
-	foreach($books as $book) {
-		$tmp = [];
-		// For each post get post meta data for ISBN
-		$isbn = get_post_meta($book->ID, 'isbn_prod', true);
-		if (!empty($isbn)) {
+			$tmp = [];
+
+			$book = Book::load_book($isbn);
+			if ($book !== False) {
+
+				// Formaat Book details
 				$tmp['isbn'] = $isbn;
-		}
-		else {
-			add_error($msgs, "Unable to locate ISBN for book %s", array($book->post_title));
-		}
+				$tmp['title'] = $book->title;
+				$tmp['summary'] = str_replace('"', '""', $book->summary);
+				$tmp['rating'] = (float)$book->rating;
 
-		$tmp['title'] = $book->post_title;
-		$tmp['summary'] = str_replace('"', '""', $book->post_content);
+				// Add term names to proper CSV column (properly formatted)
+				$tmp['authors'] = implode(', ', $book->authors);
+				$tmp['genres'] = html_entity_decode(implode(', ', $book->genres));
+				$tmp['periods'] = implode(', ', $book->periods);
+				$tmp['location'] = implode(', ', $book->locations);
+				$tmp['tags'] = implode(', ', $book->tags);
 
-		// For each top level term get ID
-		$auth_term_id = get_term_by('name', 'Authors', 'product_cat');
-		$loc_term_id = get_term_by('name', 'Location', 'product_cat');
-		$genres_term_id = get_term_by('name', 'Genres', 'product_cat');
-		$periods_term_id = get_term_by('name', 'Periods', 'product_cat');
+				$tmp['cover'] = $book->cover;
 
-		// For each post get all the associated terms product_cat
-		$terms = wp_get_post_terms($book->ID, 'product_cat',
-															 array("fields" => "all"));
-		foreach ($terms as $value) {
-			// Add term names to proper CSV column
-			switch ($value->parent) {
-				case $auth_term_id->term_id:
-				  if (isset($tmp['authors'])) { $tmp['authors'] .= ', ' . $value->name; }
-					else { $tmp['authors'] = $value->name; }
-					break;
+				// Build CSV record of:
+			 	// ISBN, Title, Authors, Summary, Rating, Location, Genres, Periods, Tags, Cover
+				$csv[] = sprintf($csv_rec, $tmp['isbn'], $tmp['title'], $tmp['authors'],
+													$tmp['summary'], $tmp['rating'], $tmp['location'],
+													$tmp['genres'], $tmp['periods'], $tmp['tags'], $tmp['cover']);
 
-				case $loc_term_id->term_id:
-					if (isset($tmp['location'])) { $tmp['location'] .= ', ' . $value->name; }
-					else { $tmp['location'] = $value->name; }
-					break;
+				// Build complete CSV string
+				foreach($csv as $row) {
+					$result .= $row . "\n";
+				}
 
-				case $genres_term_id->term_id:
-					if (isset($tmp['genres'])) { $tmp['genres'] .= ', ' . $value->name; }
-					else { $tmp['genres'] = $value->name; }
-					break;
-
-				case $periods_term_id->term_id:
-					if (isset($tmp['periods'])) { $tmp['periods'] .= ', ' . $value->name; }
-					else { $tmp['periods'] = $value->name; }
-					break;
+				// Download It
+				header('Content-Description: Download NomadReader books');
+				header("Content-type: " . $file_mime);
+				header("Content-Disposition: attachment; filename=" . $file_name);
+				header("Pragma: no-cache");
+				header("Expires: 0");
+				ob_end_clean();
+				ob_start();
+					echo $result;
+				ob_end_flush();
+			}
+			else {
+					add_error($msgs, "Unable to locate Book for %s", $isbn);
 			}
 		}
-
-		// For each post get all the associated tags product_tag
-		$tags = wp_get_post_terms($book->ID, 'product_tag',
-															array("fields" => "all"));
-		$tmp['tags'] = '';
-		foreach($tags as $tag) {
-			if (isset($tmp['tags'])) { $tmp['tags'] .= ', ' . $tag->name; }
-			else { $tmp['tags'] = $tag->name; }
-		}
-
-		$tmp['cover'] = '';
-		$thumb_id = get_post_meta($book->ID, '_thumbnail_id', True);
-		$attachment = get_post($thumb_id);
-		if ($attachment) {
-			$tmp['cover'] = $attachment->guid;
-		}
-		else {
-			add_error($msgs, "Unable to image for book %s", array($book->post_title));
-		}
-
-		// Build CSV record of:
-	 	// ISBN, Title, Authors, Summary, Rating, Location, Genres, Periods, Tags,	Cover
-		$csv[] = sprintf($csv_rec, $tmp['isbn'], $tmp['title'], $tmp['authors'],
-											$tmp['summary'], "0.0", $tmp['location'],
-											html_entity_decode($tmp['genres']), $tmp['periods'],
-											$tmp['tags'], $tmp['cover']);
 	}
-
-	// Build complete CSV string
-	foreach($csv as $row) {
-		$result .= $row . "\n";
-	}
-
-	// Download It
-	if (!empty($result) && !empty($file_name)) {
-		header('Content-Description: Download NomadReader books');
-		header("Content-type: " . $file_mime);
-		header("Content-Disposition: attachment; filename=" . $file_name);
-		header("Pragma: no-cache");
-		header("Expires: 0");
-		ob_end_clean();
-		ob_start();
-			echo $result;
-		ob_end_flush();
+	else {
+		add_error($msgs, "Unable to locate any ISBNs");
 	}
 }
 
@@ -336,15 +292,7 @@ function export_books() {
  */
 function import_files() {
 
-	if (ini_get('safe_mode')) {
-		ini_set('max_execution_time', 0);
-	}
-	else {
-		set_time_limit(0);
-	}
-
-	require('Book.php');
-	require('utilities.php');
+	disable_execution_timer();
 
 	$msgs = array();
 	$books = array();
@@ -374,58 +322,20 @@ function import_files() {
 				// ADD to WordPress
 				foreach($books as $book) {
 
-					// Create the MAIN post
-					$post_id = create_product_post($book);
-					if (!is_wp_error($post_id)) {
-
-						// Set the WooCommerce metadata
-						create_post_metadata($post_id, $book->isbn, $book->rating);
-
-						// Setup data structure to associate cover image with post
-						$img = array(
-							'file' 		=> $book->cover,
-							'height'	=> 0,
-							'width'		=> 0,
-						);
-						$attach_id = create_attachment_post($img, $post_id);
-						if (is_wp_error($attach_id)) {
-							add_error($msgs, "Could not insert attachment post for %s %s; %s",
-												array($book->isbn, $book->title, $attach_id->get_error_message()));
-						}
-
-						// Create the set of term IDs, if not exist and associate
-						$genres = convert_term_names_to_term_ids($book->genres, 'genres');
-						$periods = convert_term_names_to_term_ids($book->periods, 'periods');
-						$authors = convert_term_names_to_term_ids($book->authors, 'authors');
-						// Split location on comma to get individual terms for city and country
-						$location_parts = array();
-						foreach($book->locations as $location) {
-							$parts = explode(',', $location);
-							foreach($parts as $temp) {
-								$location_parts[] = trim($temp);
-							}
-						}
-						$locations = convert_term_names_to_term_ids($location_parts, 'location');
-
-						// Create the list of term IDs for all the differrent term types
-						$all_terms = array_merge($authors, $genres, $periods, $locations);
-						$result = create_post_object_terms($post_id, $all_terms, $book->tags,
-																								$book->rating);
-						if (is_wp_error($result)) {
-							add_error($msgs, "Could not create/assoc terms for %s %s; %s",
-												array($book->isbn, $book->title, $result->get_error_message()));
-						}
-
-						// If no errors then add INFO book added message
-						if (empty($msgs['err'])) {
-							add_notice($msgs, "Added book %s %s", array($book->isbn, $book->title));
+					// Update or Insert book details into WordPress
+					if ($book.exists()) {
+						$post_id = $book->update();
+						if ($post_id == 0) {
+							add_error($msgs, "Unable to update Book %s %s to WordPress",
+												$book->isbn, $book->title);
 						}
 					}
 					else {
-						// Failed to create WP post for book
-						add_error($msgs, "Could not create Book product post for %s %s; %s",
-											array($book->isbn, $book->title, $post_id->get_error_message()));
-						break;
+						$post_id = $book->insert();
+						if ($post_id == 0) {
+							add_error($msgs, "Unable to insert Book %s %s to WordPress",
+												$book->isbn, $book->title);
+						}
 					}
 				}
 			}
@@ -447,7 +357,6 @@ function import_files() {
 function update_ext_links() {
 
 	$msgs = array();
-	$count = 0;
 
 	// Load the values from wordpress options
 	$options = get_option(NR_OPT_AWS_TOKENS_CONFIG);
@@ -463,6 +372,7 @@ function update_ext_links() {
 		'order'            => 'DESC',
 		'post_type'        => 'product',
 		'post_status'      => 'publish',
+		'numberposts'			 => -1
 	);
 	$books = get_posts($args);
 	if (!is_wp_error($books)) {
@@ -475,7 +385,7 @@ function update_ext_links() {
 				"https://www.amazon.com/dp/" . $isbn . "/?tag=" . $aff_value);
 			update_post_meta($book->ID, '_button_text', $buy_value);
 
-			$count += 1;
+			add_notice($msgs, "Updated external link for %s %s", array($isbn, $books->title));
 		}
 	}
 	else {
@@ -492,18 +402,9 @@ function update_ext_links() {
  * Remove Duplicate Books
  */
 function remove_duplicate_books() {
-
-	if (ini_get('safe_mode')) {
-		ini_set('max_execution_time', 0);
-	}
-	else {
-		set_time_limit(0);
-	}
-
-	require('Book.php');
-	require('utilities.php');
-
 	global $wpdb;
+
+	disable_execution_timer();
 
 	$msgs = array();
 	$books = array();
@@ -569,62 +470,6 @@ function remove_duplicate_books() {
 // SUPPORT Functions
 ///////////////////////////////////////////////////////////////////////////////
 
-/**
- * Add a informational message to the message stack
- *
- * @param array $msgs					The stack of previous messages to add notice
- * @param string $notice			The notice message in sprintf format
- * @param array $notice_parms	The array of parameters to insert into $notice
- */
-function add_notice(&$msgs, $notice, $notice_parms=array()) {
-	process_message($msgs, $notice, $notice_parms, 'inf');
-}
-
-/**
- * Add a informational message to the message stack
- *
- * @param array $msgs					The stack of previous messages to add notice
- * @param string $notice			The notice message in sprintf format
- * @param array $notice_parms	The array of parameters to insert into $notice
- */
-function add_error(&$msgs, $notice, $notice_parms=array()) {
-	process_message($msgs, $notice, $notice_parms, 'err');
-}
-
-/**
- * Add a informational message to the message stack
- *
- * @param array $msgs					The stack of previous messages to add notice
- * @param string $notice			The notice message in sprintf format
- * @param array $notice_parms	The array of parameters to insert into $notice
- * @param string $type				Type of message, either 'err' or 'inf'
- */
-function process_message(&$msgs, $notice, $notice_parms, $type='err') {
-
-	if (empty($msgs) || !array_key_exists($type, $msgs)) {
-			$msgs[$type] = array();
-	}
-
-	if (count($msgs[$type]) < 10) {
-		$msgs[$type][] = vsprintf($notice, $notice_parms);
-	}
-	else {
-		// Replace last messaage with updated messages count
-		$curr = count($msgs[$type]);
-
-		$match = array();
-		$res = preg_match('/^\d+/', $msgs[$type][$curr - 1], $match);
-		if ($res !== FALSE && $res == 1) {
-			$curr_count = (int)$match[0];
-			$msgs[$type][$curr - 1] = sprintf("%d more %s messages",
-																				$curr_count +  1, $type);
-		}
-		else {
-			$msgs[$type][] = sprintf("%d more %s messages", 1, $type);
-		}
-	}
-}
-
 /*
  * Register the NomadReader Books plugin settings
  */
@@ -632,8 +477,8 @@ function register_nomadreader_config() {
 
 	// Insert the empty NomadReader options, if not exist
 	$opts = array(
-		NR_AWS_ACCESS_TOKEN		=> '',
-		NR_AWS_SECRET_TOKEN		=> '',
+		NR_AWS_ACCESS_TOKEN	=> '',
+		NR_AWS_SECRET_TOKEN	=> '',
 		NR_AWS_AFFILIATE_TAG	=> '',
 		NR_AMZN_BUY_BTN_TEXT	=> '',
 	);
@@ -641,9 +486,9 @@ function register_nomadreader_config() {
 
 	// Register the different config properties
 	$args = array(
-						'type' 							=> 'string',
-          	'sanitize_callback' => 'sanitize_text_array',
-          	'default' 					=> NULL
+		'type'							=> 'string',
+		'sanitize_callback'	=> 'sanitize_text_array',
+	  'default'						=> NULL
 	);
 	register_setting(NR_OPT_AWS_TOKENS_GRP, NR_OPT_AWS_TOKENS_CONFIG, $args);
 
@@ -667,196 +512,21 @@ function register_nomadreader_config() {
 		'nr_buy_button_text_cb', NR_OPT_AWS_TOKENS_GRP, NR_OPT_AFFILIATE_SECT);
 }
 
-/**
- * Encrypt a string using OpenSSL
- *
- * @param string $plaintext Strng to encrypt
- * @param int $key_size Number of bytes the key length should be
- * @return string|bool The encrypted string or False if failed
- */
-function encrypt_stuff($plantext, $key_size = 16) {
-
-	$key = substr(hash('sha256', ENC_K), 0, 16);
-	$iv = substr(hash('sha256', EN_V), 0, 16);
-	return openssl_encrypt($plantext, ENC_M, $key, OPENSSL_RAW_DATA, $iv);
-}
-
-/**
- * Decrypt a string using OpenSSL
- *
- * @param string $ciphertext Strng to decrypt
- * @param int $key_size Number of bytes the key length should be
- * @return string|bool The encrypted string or False if failed
- */
-function decrypt_stuff($ciphertext, $key_size = 16) {
-	$key = substr(hash('sha256', ENC_K), 0, 16);
-	$iv = substr(hash('sha256', EN_V), 0, 16);
-	return openssl_decrypt($ciphertext, ENC_M, $key, OPENSSL_RAW_DATA, $iv);
-}
-
-
-// UI Stuff
-
-/**
- * Add column headers to the WooCommerce Product admin table
- *
- * @param array   The array of column labels
- * @return array 	The new array of column names
- */
-function add_book_columns($columns){
-	return array(
-		'cb' => '<input type="checkbox" />', // checkbox for bulk actions
-		'thumb' => '<span class="wc-image tips" data-tip="Image">Image</span>',
-		'isbn' => 'ISBN', // CUSTOM
-		'name' => 'Name',
-		'authors' => 'Authors',  // CUSTOM
-		'location' => 'Locations',  // CUSTOM
-		'genres' => 'Genres',  // CUSTOM
-		'periods' => 'Periods',  // CUSTOM
-		// 'sku' => 'SKU', // REMOVED
-		// 'is_in_stock' => 'Stock',    // REMOVED
-		// 'price' => 'Price',    // REMOVED
-		// 'product_cat' => 'Categories',  // REMOVED
-		'product_tag' => 'Tags',
-		'rating' => 'Rating',  // CUSTOM
-		'featured' => '<span class="wc-featured parent-tips" data-tip="Featured">Featured</span>',
-		//'product_type' => '<span class="wc-type parent-tips" data-tip="Type">Type</span>' // REMOVED
-	);
-}
-
-/**
- * Add the column headers which are to be sortable
- *
- * @param array   The array of column labels
- * @return array 	The new array of column names
- */
-function add_book_sortable_columns($columns){
-	return array(
-		// 'isbn' => 'isbn_prod', // CUSTOM
-		// 'name' => 'Name',
-		'authors' => 'authors',  // CUSTOM
-		'location' => 'location',  // CUSTOM
-		'genres' => 'genres',  // CUSTOM
-		'periods' => 'periods',
-		// 'rating' => 'rating',  // CUSTOM
-		'featured' => 'Featured',
-	);
-}
-
-/**
- * Add the custom column data to the WooCommerce Product admin table
- *
- * @param string 	The current column name
- * @param string 	The column content
- */
-function add_book_columns_content($column, $id){
-
-	require_once('utilities.php');
-
-	if (strtolower($column) == 'isbn') {
-			$isbn = get_post_meta($id, 'isbn_prod', true);
-			echo $isbn;
-	}
-	elseif ($column == 'authors' || $column == 'genres' || $column == 'periods') {
-		$names = get_book_term_names($id, $column);
-		foreach($names as $name) {
-			echo '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
-					esc_html(sanitize_title($name)) . '&post_type=product')) . ' ">' .
-					esc_html($name) . '</a><br/>';
-		}
-	}
-	elseif ($column == 'location') {
-		$names_link = array();
-
-		$names = array_chunk(get_book_term_names($id, $column), 2);
-		foreach($names as $name) {
-			$temp = '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
-					sanitize_title(strtolower($name[0])) . '&post_type=product')) . ' ">' .
-					esc_html($name[0]) . '</a>';
-			if (isset($name[1])) {
-				$temp .= ', ' . '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
-						sanitize_title(strtolower($name[1])) . '&post_type=product')) . ' ">' .
-						esc_html($name[1]) . '</a>';
-			}
-			$names_link[] = $temp;
-		}
-		$delim_names = implode(',<br/>', $names_link);
-		echo $delim_names;
-	}
-	// elseif ($column == 'rating') {
-	// 	$woo_stars = wp_get_object_terms($id, 'product_visibility');
-	// 	$rating_html = '<div class="star-rating" title="' . $woo_stars . ' out of 5' . '">';
-	// 	// TODO Repeat this rating times
-	// 	$rating_html = '<div class="star star-full"></div>';
-	// 	$rating_html .= '</div>';
-	// 	echo $rating_html;
-	// }
-}
-
-
-/**
- * How the columns should be sorted
- */
-function book_orderby($clauses, $query) {
-	require_once('utilities.php');
-
-	global $wpdb;
-
-  $orderby = $query->get('orderby');
-
-	if ('authors' === $orderby || 'periods' === $orderby || 'genres' === $orderby ||
-			'location' === $orderby) {
-
-		$id = get_toplevel_term($orderby);
-
-		$clauses['join'] .= "
-			LEFT OUTER JOIN {$wpdb->term_relationships} ON {$wpdb->posts}.ID={$wpdb->term_relationships}.object_id
-			LEFT OUTER JOIN {$wpdb->term_taxonomy} USING (term_taxonomy_id)
-			LEFT OUTER JOIN {$wpdb->terms} USING (term_id)";
-		$clauses['where'] .= " AND (parent = {$id})";
-		$clauses['groupby'] = "object_id";
-		$clauses['orderby'] = "GROUP_CONCAT({$wpdb->terms}.name ORDER BY name ASC) ";
-		$clauses['orderby'] .= ('ASC' == strtoupper($query->get('order'))) ? 'ASC' : 'DESC';
-	}
-
-	return $clauses;
-}
-
-/**
- * Tweak the Product Admin table CSS layout
- */
-function add_book_columns_style() {
-	$css = ".widefat .column-isbn { width: 8%; }\n";
-	$css = ".widefat .column-authors { width: 22%; }\n";
-	$css = ".widefat .column-locations { width: 16%; }\n";
-	$css = ".widefat .column-genres { width: 16%; }\n";
-	$css = ".widefat .column-periods { width: 11%; }\n";
-	wp_add_inline_style('woocommerce_admin_styles', $css);
-}
 
 /**
  * Add the necessary JavaScript/CSS for the admin pages
  */
 function nomadreader_books_enqueue($hook) {
 
-	$screen = get_current_screen();
+    // Twitter Bootstrap JS
+    wp_register_script('prefix_bootstrap',
+			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js');
+    wp_enqueue_script('prefix_bootstrap');
 
-  if (strpos($screen->base, 'nomadreader-import') === false ||
-			strpos($screen->base, 'nomadreader_export_books') === false ||
-			strpos($screen->base, 'update_ext_links') === false ||
-			strpos($screen->base, 'remove_duplicate_books') === false) {
-    return;
-	}
-
-  // Twitter Bootstrap JS
-  wp_register_script('prefix_bootstrap',
-		'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js');
-  wp_enqueue_script('prefix_bootstrap');
-
-  // Twitter Bootstrap CSS
-  wp_register_style('prefix_bootstrap',
-		'//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css');
-  wp_enqueue_style('prefix_bootstrap');
+    // Twitter Bootstrap CSS
+    wp_register_style('prefix_bootstrap',
+			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css');
+    wp_enqueue_style('prefix_bootstrap');
 }
 
 ?>
