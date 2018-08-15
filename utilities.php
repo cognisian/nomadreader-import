@@ -9,6 +9,18 @@
 
 defined('WPINC') || die();
 
+// Parent Term names (categories) to contain the NomadReader terms
+define('CATG_AUTHORS', 'Authors');
+define('CATG_GENRES', 'Genres');
+define('CATG_PERIODS', 'Periods');
+define('CATG_LOCATIONS', 'Locations');
+
+// WooCommerce Taxonomies
+define('WC_CATEGORY_TAXN', 'product_cat');
+define('WC_TAGS_TAXN', 'product_tag');
+
+// Post Meta Key for ISBN
+define('META_KEY_ISBN', 'isbn_prod');
 
 /**
  * Get all the ISBN numbers
@@ -22,8 +34,8 @@ defined('WPINC') || die();
   $r = $wpdb->get_col("
     SELECT pm.meta_value
 		FROM {$wpdb->postmeta} pm
-    WHERE pm.meta_key = 'isbn_prod'
-  ");
+    WHERE pm.meta_key = '" . META_KEY_ISBN ."'"
+  );
 
   return $r;
  }
@@ -66,10 +78,10 @@ function add_book_sortable_columns($columns){
 		// 'isbn' => 'isbn_prod', // CUSTOM
 		// 'name' => 'Name',
 		'authors' => 'authors',  // CUSTOM
-		'location' => 'location',  // CUSTOM
+		'locations' => 'locations',  // CUSTOM
 		'genres' => 'genres',  // CUSTOM
 		'periods' => 'periods',
-		// 'rating' => 'rating',  // CUSTOM
+		'rating' => 'rating',  // CUSTOM
 		'featured' => 'Featured',
 	);
 }
@@ -83,21 +95,25 @@ function add_book_sortable_columns($columns){
 function add_book_columns_content($column, $id){
 
 	if (strtolower($column) == 'isbn') {
-			$isbn = get_post_meta($id, 'isbn_prod', true);
+			$isbn = get_post_meta($id, META_KEY_ISBN, true);
 			echo $isbn;
 	}
-	elseif ($column == 'authors' || $column == 'genres' || $column == 'periods') {
-		$names = get_book_term_names($id, $column);
+	elseif (strtolower($column) == 'authors' || strtolower($column) == 'genres' ||
+      strtolower($column) == 'periods') {
+
+		$terms = wp_get_post_terms($id, WC_CATEGORY_TAXN, array('fields' => 'all'));
+    $names = Book::filter_terms_by_name($terms, $column);
 		foreach($names as $name) {
 			echo '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
 					esc_html(sanitize_title($name)) . '&post_type=product')) . ' ">' .
 					esc_html($name) . '</a><br/>';
 		}
 	}
-	elseif ($column == 'location') {
+	elseif (strtolower($column) == 'location') {
 		$names_link = array();
 
-		$names = array_chunk(get_book_term_names($id, $column), 2);
+    $terms = wp_get_post_terms($id, WC_CATEGORY_TAXN, array('fields' => 'all'));
+		$names = array_chunk(Book::filter_terms_by_name($terms, $column), 2);
 		foreach($names as $name) {
 			$temp = '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
 					sanitize_title(strtolower($name[0])) . '&post_type=product')) . ' ">' .
@@ -112,14 +128,11 @@ function add_book_columns_content($column, $id){
 		$delim_names = implode(',<br/>', $names_link);
 		echo $delim_names;
 	}
-	// elseif ($column == 'rating') {
-	//$woo_stars = wp_get_object_terms($id, 'product_visibility');
-	// $rating_html = '<div class="star-rating" title="' . $woo_stars . ' out of 5' . '">';
-	// TODO Repeat this rating times
-	// $rating_html = '<div class="star star-full"></div>';
-	// $rating_html .= '</div>';
-	// echo $rating_html;
-	// }
+	elseif (strtolower($column) == 'rating') {
+	  $rating = get_post_meta($id, '_wc_average_rating', true);
+    // I will do the echoing thank you very much
+	  echo wp_star_rating(array('rating' => $rating, 'echo' => False));
+	}
 }
 
 /**
@@ -130,8 +143,8 @@ function book_orderby($clauses, $query) {
 
   $orderby = $query->get('orderby');
 
-	if ('authors' === $orderby || 'periods' === $orderby || 'genres' === $orderby ||
-			'location' === $orderby) {
+	if ('authors' === strtolower($orderby) || 'periods' === strtolower($orderby) ||
+      'genres' === strtolower($orderby) || 'location' === strtolower($orderby)) {
 
 		$id = get_toplevel_term($orderby);
 

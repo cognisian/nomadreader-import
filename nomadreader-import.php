@@ -278,7 +278,7 @@ function export_books() {
 				ob_end_flush();
 			}
 			else {
-					add_error($msgs, "Unable to locate Book for %s", $isbn);
+					add_error($msgs, "Unable to locate Book for %s", array($isbn));
 			}
 		}
 	}
@@ -323,18 +323,18 @@ function import_files() {
 				foreach($books as $book) {
 
 					// Update or Insert book details into WordPress
-					if ($book.exists()) {
+					if ($book->exists()) {
 						$post_id = $book->update();
-						if ($post_id == 0) {
+						if ($post_id === 0) {
 							add_error($msgs, "Unable to update Book %s %s to WordPress",
-												$book->isbn, $book->title);
+												array($book->isbn, $book->title));
 						}
 					}
 					else {
 						$post_id = $book->insert();
-						if ($post_id == 0) {
+						if ($post_id === 0) {
 							add_error($msgs, "Unable to insert Book %s %s to WordPress",
-												$book->isbn, $book->title);
+												array($book->isbn, $book->title));
 						}
 					}
 				}
@@ -379,7 +379,7 @@ function update_ext_links() {
 		// For each post get post meta data for ISBN and update the
 		// external URL for the book
 		foreach($books as $book) {
-			$isbn = get_post_meta($book->ID, 'isbn_prod', true);
+			$isbn = get_post_meta($book->ID, META_KEY_ISBN, true);
 
 			update_post_meta($book->ID, '_product_url',
 				"https://www.amazon.com/dp/" . $isbn . "/?tag=" . $aff_value);
@@ -415,7 +415,7 @@ function remove_duplicate_books() {
 		$results = $wpdb->get_results("
 			SELECT meta_value as isbn
 			FROM {$wpdb->prefix}postmeta
-			WHERE meta_key = 'isbn_prod'
+			WHERE meta_key = " . META_KEY_ISBN . "
 			GROUP BY meta_value
 			ORDER BY meta_value
 		");
@@ -425,7 +425,7 @@ function remove_duplicate_books() {
 			// Use DESC as latest post will have higher ID, that way first post returned
 			// will be the one we keep ie higher post ID = most recent post
 			$args = array(
-		    'meta_key' 				=> 'isbn_prod',
+		    'meta_key' 				=> META_KEY_ISBN,
 				'meta_value' 			=> $row->isbn,
 		    'post_type' 			=> 'product',
 		    'post_status' 		=> 'publish',
@@ -444,11 +444,11 @@ function remove_duplicate_books() {
 					  $res = wp_trash_post($post->ID);
 						if ($res === FALSE) {
 							add_error($msgs, 'Unable to move post %d to trash for ISBN %s',
-													array($post->ID, $row->isbn));
+												array($post->ID, $row->isbn));
 						}
 						else {
 							add_notice($msgs, 'Removed duplicate post %d for ISBN %s',
-													array($post->ID, $row->isbn));
+												 array($post->ID, $row->isbn));
 						}
 					}
 					else {
@@ -518,15 +518,22 @@ function register_nomadreader_config() {
  */
 function nomadreader_books_enqueue($hook) {
 
-    // Twitter Bootstrap JS
-    wp_register_script('prefix_bootstrap',
-			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js');
-    wp_enqueue_script('prefix_bootstrap');
+	if ($hook != 'toplevel_page_'.PLUGIN_NAME ||
+			$hook != 'nomadreader_page_update_ext_links' ||
+			$hook != 'nomadreader_page_remove_duplicate_books' ||
+			$hook != 'nomadreader_page_nomadreader_export_books') {
+  	return;
+  }
 
-    // Twitter Bootstrap CSS
-    wp_register_style('prefix_bootstrap',
-			'//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css');
-    wp_enqueue_style('prefix_bootstrap');
+  // Twitter Bootstrap JS
+  wp_register_script('prefix_bootstrap',
+		'//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js');
+  wp_enqueue_script('prefix_bootstrap');
+
+  // Twitter Bootstrap CSS
+  wp_register_style('prefix_bootstrap',
+		'//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css');
+  wp_enqueue_style('prefix_bootstrap');
 }
 
 ?>

@@ -94,6 +94,8 @@ class BookWordPressTest extends WP_UnitTestCase {
 
 	/**
 	 * Test a Book is loaded from WordPress with full data (ie with Authors, Tags etc)
+	 *
+	 * @group failing
 	 */
 	public function test_load_all_book_from_wordpress() {
 
@@ -172,7 +174,6 @@ class BookWordPressTest extends WP_UnitTestCase {
 
 	/**
 	 * Test a Book is inserted into WordPress
-	 * @group failing
 	 */
 	public function test_update_book_in_wordpress() {
 
@@ -231,6 +232,74 @@ class BookWordPressTest extends WP_UnitTestCase {
 		$this->assertSame($this->test_tags_upd, $book->tags);
 
 	}
+
+	/**
+   * Test that importing books from file will create new product posts.
+	 *
+	 * This should run in a separate process as the import will call
+	 * wp_redirect and die
+	 *
+	 * @runInSeparateProcess
+   */
+	public function test_import_books_insert_update() {
+
+		// FIXTURE, create the initial products to export
+		$books = Book::parse_csv(getcwd(). '/tests/data/test-books.csv');
+		foreach($books as $book) {
+			$book->insert();
+		}
+
+		// Setup the file to import:
+		// 		2 books with same ISBN as existing books
+		// 		1 new book with new ISBN
+		$_POST['action'] = 'import_files';
+
+		$_FILES['import_files']['tmp_name'] = array(
+			getcwd(). '/tests/data/test-import-update.csv'
+		);
+		$_FILES['import_files']['name'] = array(
+			'test-import-update.csv'
+		);
+		$_FILES['import_files']['type'] = array(
+			'text/csv'
+		);
+
+		// TEST Import the updates to books
+		import_files();
+
+		// ASSERT 1 book added
+		$book = Book::load_book('1111111111');
+		$this->assertEquals('Title', $book->title);
+		$this->assertEquals('Summary', $book->summary);
+		$this->assertEquals(3.1, $book->rating);
+		$this->assertSame(array('A Author'), $book->authors);
+		$this->assertSame(array('Paris', 'France'), $book->locations);
+		$this->assertSame(array('Romance'), $book->genres);
+		$this->assertSame(array('1800s'), $book->periods);
+
+		// ASSERT 2 books updated
+		$book = Book::load_book('345530764');
+		$this->assertStringStartsWith('UPDATED', $book->title);
+		$this->assertStringStartsWith('UPDATED', $book->summary);
+		$this->assertEquals(1.0, $book->rating);
+
+		$this->assertSame(array('A Author'), $book->authors);
+		$this->assertSame(array('Updated', 'France'), $book->locations);
+		$this->assertSame(array('Fiction & Literature', 'Historical Fiction'),
+											$book->genres);
+		$this->assertSame(array('2000s'), $book->periods);
+
+		$book = Book::load_book('553418793');
+		$this->assertStringStartsWith('UPDATED', $book->title);
+		$this->assertStringStartsWith('UPDATED', $book->summary);
+		$this->assertEquals(2.0, $book->rating);
+
+		$this->assertEquals(array('Nina George'), $book->authors);
+		$this->assertSame(array('Another', 'France'), $book->locations);
+		$this->assertSame(array('Mystery & Suspense', 'Romance'),
+											$book->genres);
+		$this->assertSame(array('Recent Releases'), $book->periods);
+  }
 
 	//
 	// HELPERS

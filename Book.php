@@ -9,6 +9,7 @@
 
 defined('WPINC') || die();
 
+require_once('utilities.php');
 
 // if ( 'no' === get_option( 'woocommerce_enable_review_rating' ) ) {
 //   return;
@@ -96,7 +97,7 @@ class Book {
 
       $tags = '';
       if (property_exists($book, 'tags')) {
-        $rating = $book->tags;
+        $tags = $book->tags;
       }
 
       $books[] = new Book($book->isbn, $book->title, $book->authors,
@@ -116,7 +117,7 @@ class Book {
   static public function load_book($isbn) {
 
   	$args = array(
-      'meta_key' 				=> 'isbn_prod',
+      'meta_key' 				=> META_KEY_ISBN,
   		'meta_value' 			=> $isbn,
       'post_type' 			=> 'product',
       'post_status' 		=> 'publish',
@@ -128,14 +129,14 @@ class Book {
       $book = $book_post[0];
 
       // Load the product category terms and split into proper groups
-      $post_terms = wp_get_post_terms($book->ID, 'product_cat', array('fields' => 'all'));
-      $authors = Book::filter_terms_by_name($post_terms, 'authors');
-      $genres = Book::filter_terms_by_name($post_terms, 'genres');
-      $periods = Book::filter_terms_by_name($post_terms, 'periods');
-      $locations = Book::filter_terms_by_name($post_terms, 'locations');
+      $post_terms = wp_get_post_terms($book->ID, WC_CATEGORY_TAXN, array('fields' => 'all'));
+      $authors = Book::filter_terms_by_name($post_terms, CATG_AUTHORS);
+      $genres = Book::filter_terms_by_name($post_terms, CATG_GENRES);
+      $periods = Book::filter_terms_by_name($post_terms, CATG_PERIODS);
+      $locations = Book::filter_terms_by_name($post_terms, CATG_LOCATIONS);
 
       // Load the product tag terms
-      $post_tags = wp_get_post_terms($book->ID, 'product_tag', array('fields' => 'names'));
+      $post_tags = wp_get_post_terms($book->ID, WC_TAGS_TAXN, array('fields' => 'names'));
 
       $rating = 0.0;
       $rating = (float)get_post_meta($book->ID, '_wc_average_rating', true);
@@ -193,11 +194,11 @@ class Book {
     		'orderby'                  => 'term_group',
     		'hide_empty'               => false,
     		'hierarchical'             => 1,
-    		'taxonomy'                 => 'product_cat',
+    		'taxonomy'                 => WC_CATEGORY_TAXN,
     		'pad_counts'               => false
     	);
     	$term = get_terms($args_main);
-    	if (!is_wp_error($term)) {
+    	if (!is_wp_error($term) && !empty($term)) {
     		$parent_term_id = $term[0]->term_id;
         $terms = array_filter($post_terms, function($v) use ($parent_term_id) {
           $res = False;
@@ -301,7 +302,7 @@ class Book {
 
     // Find the post associated with ISBN number to update
     $args = array(
-      'meta_key' 				=> 'isbn_prod',
+      'meta_key' 				=> META_KEY_ISBN,
   		'meta_value' 			=> $this->isbn,
       'post_type' 			=> 'product',
       'post_status' 		=> 'publish',
@@ -353,7 +354,7 @@ class Book {
 
     // Find the post associated with ISBN number to update
     $args = array(
-      'meta_key' 				=> 'isbn_prod',
+      'meta_key' 				=> META_KEY_ISBN,
   		'meta_value' 			=> $this->isbn,
       'post_type' 			=> 'product',
       'post_status' 		=> 'publish',
@@ -437,8 +438,8 @@ class Book {
   	wp_set_post_terms($post_id, 'external', 'product_type');
 
     // Update the product tags (ensure the woocommerce product_tag exists)
-  	if (!taxonomy_exists('product_tag')) {
-  		register_taxonomy('product_tag', 'product');
+  	if (!taxonomy_exists(WC_TAGS_TAXN)) {
+  		register_taxonomy(WC_TAGS_TAXN, 'product');
   	}
 
     return $this->link_terms_to_post($post_id);
@@ -618,21 +619,21 @@ class Book {
     if (!empty($terms)) {
 
       // Create the terms, if they do not exist
-    	$this->create_terms($this->authors, 'Authors');
-      $this->create_terms($this->genres, 'Genres');
-      $this->create_terms($this->periods, 'Periods');
-      $this->create_terms($this->locations, 'Locations');
+    	$this->create_terms($this->authors, CATG_AUTHORS);
+      $this->create_terms($this->genres, CATG_GENRES);
+      $this->create_terms($this->periods, CATG_PERIODS);
+      $this->create_terms($this->locations, CATG_LOCATIONS);
 
       // Update the post terms, replacing the previous terms
-    	wp_set_post_terms($post_id, $terms, 'product_cat', $append);
-    	wp_update_term_count_now($terms, 'product_cat');
+    	wp_set_post_terms($post_id, $terms, WC_CATEGORY_TAXN, $append);
+    	wp_update_term_count_now($terms, WC_CATEGORY_TAXN);
     }
 
     // Assign Tags to the product
     if (!empty($this->tags)) {
       // Update post tags, replacing the previous tags
-    	wp_set_post_terms($post_id, $this->tags, 'product_tag', $append);
-      wp_update_term_count_now($this->tags, 'product_tag');
+    	wp_set_post_terms($post_id, $this->tags, WC_TAGS_TAXN, $append);
+      wp_update_term_count_now($this->tags, WC_TAGS_TAXN);
     }
   }
 
@@ -649,10 +650,10 @@ class Book {
     foreach($terms as $term) {
       $parent_term_id = $this->toplevel_term($parent_term_name);
 
-      $temp = term_exists($term, 'product_cat', $parent_term_id);
+      $temp = term_exists($term, WC_CATEGORY_TAXN, $parent_term_id);
   		if (($temp === null || $temp === 0) || empty($temp)) {
   			// Create new subterm
-  			$new_subterm = wp_insert_term($term, 'product_cat',
+  			$new_subterm = wp_insert_term($term, WC_CATEGORY_TAXN,
   																		array('parent' => $parent_term_id));
   			if (!is_wp_error($new_subterm)) {
   				$product_terms[] = array(
@@ -684,19 +685,19 @@ class Book {
   	$result = array();
 
   	$args_main = array(
-  		'name'										 => $termname,
+  		'name'										 => ucfirst($termname),
   		'parent'                   => 0,
   		'orderby'                  => 'term_group',
   		'hide_empty'               => false,
   		'hierarchical'             => 1,
-  		'taxonomy'                 => 'product_cat',
+  		'taxonomy'                 => WC_CATEGORY_TAXN,
   		'pad_counts'               => false
   	);
   	$term = get_terms($args_main);
   	$term_id = 0;
   	if (!is_wp_error($term)) {
   		if (empty($term)) {
-  			$temp = wp_insert_term(ucfirst($termname), 'product_cat',
+  			$temp = wp_insert_term(ucfirst($termname), WC_CATEGORY_TAXN,
   															array('slug' => $termname));
   			if (!empty($temp)) {
   				$term_id = $temp['term_id'];

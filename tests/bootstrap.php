@@ -28,4 +28,11 @@ function _manually_load_plugin() {
 tests_add_filter( 'muplugins_loaded', '_manually_load_plugin' );
 
 // Start up the WP testing environment.
+/**
+ * Mock up the WordPress wp_redirect function
+ */
+function wp_redirect() {
+	return True;
+}
+
 require $_tests_dir . '/includes/bootstrap.php';
