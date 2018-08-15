@@ -382,7 +382,7 @@ class Book {
   /**
    * Create and insert the product post from the given info
    *
-   * @return int|bool   The inserted post ID, or False if error
+   * @return int   The inserted post ID, or 0 if error
    */
   private function create_product_post() {
 
@@ -407,7 +407,7 @@ class Book {
   /**
    * Update the Book product post
    *
-   * @return int|bool   The inserted post ID, or False if error
+   * @return int   The inserted post ID, or 0 if error
    */
   private function update_product_post($post_id) {
 
@@ -577,7 +577,7 @@ class Book {
       $comment_id = wp_new_comment($args, true);
       if (!is_wp_error($comment_id) && $comment_id > 0) {
         add_comment_meta($comment_id, 'rating', $this->rating, true);
-        add_post_meta($parent_post, '_wc_average_rating', $this->rating);
+        // add_post_meta($parent_post, '_wc_average_rating', $this->rating);
       }
     }
 

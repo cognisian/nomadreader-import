@@ -302,6 +302,10 @@ class BookWordPressTest extends WP_UnitTestCase {
   }
 
 	//
+	// ASSERTS
+	//
+
+	//
 	// HELPERS
 	//
 
