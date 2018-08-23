@@ -127,13 +127,15 @@ class Book {
     if (!empty($book_post)) {
 
       $book = $book_post[0];
-
       // Load the product category terms and split into proper groups
-      $post_terms = wp_get_post_terms($book->ID, WC_CATEGORY_TAXN, array('fields' => 'all'));
-      $authors = Book::filter_terms_by_name($post_terms, CATG_AUTHORS);
-      $genres = Book::filter_terms_by_name($post_terms, CATG_GENRES);
-      $periods = Book::filter_terms_by_name($post_terms, CATG_PERIODS);
-      $locations = Book::filter_terms_by_name($post_terms, CATG_LOCATIONS);
+      $authors = get_book_terms_names_by_category($book->ID,
+                                                  get_toplevel_id(CATG_AUTHORS));
+      $genres = get_book_terms_names_by_category($book->ID,
+                                                  get_toplevel_id(CATG_GENRES));
+      $periods = get_book_terms_names_by_category($book->ID,
+                                                  get_toplevel_id(CATG_PERIODS));
+      $locations = get_book_terms_names_by_category($book->ID,
+                                                  get_toplevel_id(CATG_LOCATIONS));
 
       // Load the product tag terms
       $post_tags = wp_get_post_terms($book->ID, WC_TAGS_TAXN, array('fields' => 'names'));
@@ -173,51 +175,6 @@ class Book {
 
   }
 
-  /**
-   * Given ALL terms for a post, filtered to retrieve the list of child term
-   * names whose parent term slug matches given
-   *
-   * @param array $post_terms         The set of WP_Term objects to c
-   * @param string $parent_term_name  The term_id to check the parent property
-   * @return array                    The list term names whose parent matches the
-   * provided $parent_term_name
-   */
-  static public function filter_terms_by_name($post_terms, $parent_term_name) {
-
-    $term_names = array();
-
-    if (!empty($post_terms)) {
-      // $parent_term_id = get_toplevel_term($parent_term_name);
-    	$args_main = array(
-    		'name'										 => $parent_term_name,
-    		'parent'                   => 0,
-    		'orderby'                  => 'term_group',
-    		'hide_empty'               => false,
-    		'hierarchical'             => 1,
-    		'taxonomy'                 => WC_CATEGORY_TAXN,
-    		'pad_counts'               => false
-    	);
-    	$term = get_terms($args_main);
-    	if (!is_wp_error($term) && !empty($term)) {
-    		$parent_term_id = $term[0]->term_id;
-        $terms = array_filter($post_terms, function($v) use ($parent_term_id) {
-          $res = False;
-          if ($v->parent == $parent_term_id) {
-            $res = True;
-          }
-          return $res;
-        });
-        $term_names = array_map(function($v) {
-          return $v->name;
-        }, $terms);
-    	}
-    	else {
-    		// TODO ERROR processing
-    	}
-    }
-
-    return $term_names;
-  }
 
   /**
    * Constructor
@@ -320,7 +277,9 @@ class Book {
       // Now update the terms, attachment and ratings
       if ($result > 0) {
 
-        $result = $this->link_terms_to_post($book->ID, False);
+        $this->add_terms_to_post($book->ID, False);
+
+        $this->add_tags_to_post($book->ID, False);
 
         $args = array(
           'post_type' 			=> 'attachment',
@@ -431,18 +390,79 @@ class Book {
    */
   private function create_product_terms($post_id) {
 
-    // assigning the product type (ie affiliate link)
-    if (!taxonomy_exists('product_type')) {
-  		register_taxonomy('product_type', 'product');
-  	}
-  	wp_set_post_terms($post_id, 'external', 'product_type');
-
     // Update the product tags (ensure the woocommerce product_tag exists)
   	if (!taxonomy_exists(WC_TAGS_TAXN)) {
   		register_taxonomy(WC_TAGS_TAXN, 'product');
   	}
 
-    return $this->link_terms_to_post($post_id);
+    // Assigning the product type (ie affiliate link)
+    if (!taxonomy_exists('product_type')) {
+  		register_taxonomy('product_type', 'product');
+  	}
+  	wp_set_object_terms($post_id, 'external', 'product_type');
+
+
+    $this->add_terms_to_post($post_id, True);
+
+    $this->add_tags_to_post($post_id, True);
+
+  }
+
+  /**
+   * Set the product post terms, merge or replace with existing terms, for a
+   * category (Authors, Genres etc)
+   *
+   * @param int $post_id          The post to merge/replace terms
+   * @param bool $append          Flag indicating merge (True) or
+   *                              replace (False, default)
+   */
+  private function add_terms_to_post($post_id, $append=False) {
+
+    // Create the both the toplevel terms and their respective child
+    // terms, if they do not exist
+    $author_tl_term = create_terms(CATG_AUTHORS, WC_CATEGORY_TAXN);
+    $author_terms = create_terms($this->authors, WC_CATEGORY_TAXN,
+                                  CATG_AUTHORS);
+
+    $genres_tl_term = create_terms(CATG_GENRES, WC_CATEGORY_TAXN);
+    $genres_terms = create_terms($this->genres, WC_CATEGORY_TAXN,
+                                  CATG_GENRES);
+
+    $periods_tl_term = create_terms(CATG_PERIODS, WC_CATEGORY_TAXN);
+    $periods_terms = create_terms($this->periods, WC_CATEGORY_TAXN,
+                                  CATG_PERIODS);
+
+    $locations_tl_term = create_terms(CATG_LOCATIONS, WC_CATEGORY_TAXN);
+    $locations_terms = create_terms($this->locations, WC_CATEGORY_TAXN,
+                                    CATG_LOCATIONS);
+
+    $terms = array_merge($author_terms, $genres_terms, $periods_terms,
+                          $locations_terms);
+    if (!empty($terms)) {
+      // Extract just the term_ids, regardless of parent
+      $term_ids = filter_terms_by_category($terms, 0, 'term_id');
+      // Do not set terms per toplevel, terms should added/merged all at once
+      $res = wp_set_object_terms($post_id, $term_ids, WC_CATEGORY_TAXN, $append);
+    }
+
+  }
+
+  /**
+   * Set the product post tags, merge or replace with existing tags
+   *
+   * @param int $post_id          The post to merge/replace terms
+   * @param bool $append          Flag indicating merge (True) or
+   *                              replace (False, default)
+   */
+  private function add_tags_to_post($post_id, $append=False) {
+
+    // Associate the terms to the post
+    $new_tags = create_terms($this->tags, WC_TAGS_TAXN);
+    if (!empty($new_tags)) {
+      $tag_ids = filter_terms_by_category($new_tags, 0, 'term_id');
+      $res = wp_set_object_terms($post_id, $tag_ids, WC_TAGS_TAXN, $append);
+    }
+
   }
 
   /**
@@ -558,21 +578,19 @@ class Book {
 
     $comment_id = 0;
 
-    $curr_user = wp_get_current_user();
-
     // Dont add new comment if one already exists
     $comment = get_comments(array('post_id' => $parent_post));
     if (empty($comment)) {
       $args = array(
       	'comment_post_ID'      => $parent_post,
-      	'comment_author'       => $curr_user->first_name . ' ' . $curr_user->last_name,
+      	'comment_author'       => 'nomadreader rating',
       	'comment_author_email' => '',
       	'comment_author_url'   => '',
       	'comment_content'      => 'Rating Comment',
-      	'comment_type'         => '',
+      	'comment_type'         => 'comment',
       	'comment_parent'       => 0,
         'comment_approved'     => 1,
-      	'user_id'              => $curr_user->ID,
+      	'user_id'              => 1,
       );
       $comment_id = wp_new_comment($args, true);
       if (!is_wp_error($comment_id) && $comment_id > 0) {
@@ -594,121 +612,19 @@ class Book {
     $result = False;
 
     // Find comment for post
-    $comment = get_comments(array('post_id' => $parent_post));
+    // Use the initial admin user to separate NomadReader rating from user rating
+    $comment = get_comments(array(
+      'post_id' => $parent_post,
+      'user_id' => 1
+    ));
+    var_dump($comment);
     if (!empty($comment)) {
       update_comment_meta($comment[0]->comment_ID, 'rating', $this->rating, true);
-      update_post_meta($parent_post, '_wc_average_rating', $this->rating);
+      // update_post_meta($parent_post, '_wc_average_rating', $this->rating);
       $result = True;
     }
 
     return $result;
-  }
-
-  /**
-   * Link existing term names to post, either replacing or appending the post terms
-   *
-   * @param string $post_id  The ID of the post to updateParent term for terms
-   * @param array $append    Flag indicating whether terms should be added (true) or
-   * replace (false) previous terms
-   */
-  private function link_terms_to_post($post_id, $append=True) {
-
-    // Assign the terms to the product
-    $terms = array_merge($this->authors, $this->genres, $this->periods,
-                          $this->locations);
-    if (!empty($terms)) {
-
-      // Create the terms, if they do not exist
-    	$this->create_terms($this->authors, CATG_AUTHORS);
-      $this->create_terms($this->genres, CATG_GENRES);
-      $this->create_terms($this->periods, CATG_PERIODS);
-      $this->create_terms($this->locations, CATG_LOCATIONS);
-
-      // Update the post terms, replacing the previous terms
-    	wp_set_post_terms($post_id, $terms, WC_CATEGORY_TAXN, $append);
-    	wp_update_term_count_now($terms, WC_CATEGORY_TAXN);
-    }
-
-    // Assign Tags to the product
-    if (!empty($this->tags)) {
-      // Update post tags, replacing the previous tags
-    	wp_set_post_terms($post_id, $this->tags, WC_TAGS_TAXN, $append);
-      wp_update_term_count_now($this->tags, WC_TAGS_TAXN);
-    }
-  }
-
-  /**
-   * Create the terms with the specified parent
-   *
-   * @param array $terms              The array of term names to create
-   * @param string $parent_term_name  Parent term for terms
-   */
-  private function create_terms($terms, $parent_term_name='') {
-
-    $product_terms = array();
-
-    foreach($terms as $term) {
-      $parent_term_id = $this->toplevel_term($parent_term_name);
-
-      $temp = term_exists($term, WC_CATEGORY_TAXN, $parent_term_id);
-  		if (($temp === null || $temp === 0) || empty($temp)) {
-  			// Create new subterm
-  			$new_subterm = wp_insert_term($term, WC_CATEGORY_TAXN,
-  																		array('parent' => $parent_term_id));
-  			if (!is_wp_error($new_subterm)) {
-  				$product_terms[] = array(
-  					'term_id'						=> (int)$new_subterm['term_id'],
-  					'term_taxonomy_id'	=> (int)$new_subterm['term_taxonomy_id'],
-  					'term_name'					=> $term,
-  				);
-  			}
-      }
-      else {
-        $product_terms[] = $temp;
-      }
-    }
-
-    return $product_terms;
-  }
-
-  /**
-   * Given a term name check if it exists as top level term (one of
-   * author, location, genres, periods).  If the top level term does
-   * not exist create it.
-   *
-   * @param string $termname The top level term name to retrieve, or
-   * create if not exists
-   * @return int The term ID
-   */
-  private function toplevel_term($termname = '') {
-
-  	$result = array();
-
-  	$args_main = array(
-  		'name'										 => ucfirst($termname),
-  		'parent'                   => 0,
-  		'orderby'                  => 'term_group',
-  		'hide_empty'               => false,
-  		'hierarchical'             => 1,
-  		'taxonomy'                 => WC_CATEGORY_TAXN,
-  		'pad_counts'               => false
-  	);
-  	$term = get_terms($args_main);
-  	$term_id = 0;
-  	if (!is_wp_error($term)) {
-  		if (empty($term)) {
-  			$temp = wp_insert_term(ucfirst($termname), WC_CATEGORY_TAXN,
-  															array('slug' => $termname));
-  			if (!empty($temp)) {
-  				$term_id = $temp['term_id'];
-  			}
-  		}
-  		else {
-  			$term_id = $term[0]->term_id;
-  		}
-  	}
-
-  	return $term_id;
   }
 
   /**

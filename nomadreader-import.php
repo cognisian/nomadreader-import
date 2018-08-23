@@ -323,8 +323,10 @@ function import_files() {
 				foreach($books as $book) {
 
 					// Update or Insert book details into WordPress
+					var_dump($book->exists());
 					if ($book->exists()) {
 						$post_id = $book->update();
+						var_dump($post_id);
 						if ($post_id === 0) {
 							add_error($msgs, "Unable to update Book %s %s to WordPress",
 												array($book->isbn, $book->title));
@@ -332,6 +334,7 @@ function import_files() {
 					}
 					else {
 						$post_id = $book->insert();
+						var_dump($post_id);
 						if ($post_id === 0) {
 							add_error($msgs, "Unable to insert Book %s %s to WordPress",
 												array($book->isbn, $book->title));
@@ -344,11 +347,11 @@ function import_files() {
 			add_error($msgs, "No Import File specified");
 		}
 	}
-
-	$url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
-					admin_url('admin.php?page=' . PLUGIN_NAME));
-	wp_redirect($url);
-	die();
+	var_dump($msgs);
+	// $url = add_query_arg('msgs', base64_encode(json_encode($msgs)),
+	// 				admin_url('admin.php?page=' . PLUGIN_NAME));
+	// wp_redirect($url);
+	// die();
 };
 
 /**

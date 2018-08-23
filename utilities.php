@@ -22,6 +22,7 @@ define('WC_TAGS_TAXN', 'product_tag');
 // Post Meta Key for ISBN
 define('META_KEY_ISBN', 'isbn_prod');
 
+
 /**
  * Get all the ISBN numbers
  *
@@ -39,6 +40,158 @@ define('META_KEY_ISBN', 'isbn_prod');
 
   return $r;
  }
+
+/**
+ * Given the top level categorization (Author, Location, Period, Genre) name
+ * return its ID
+ *
+ * @param string $category_name  The top level name
+ * @return int                   Return the term_id of the category else 0
+ */
+function get_toplevel_id($category_name) {
+  $term_id = 0;
+
+  $args = array(
+    'name'										 => $category_name,
+    'taxonomy'                 => WC_CATEGORY_TAXN,
+    'hide_empty'               => false,
+    'hierarchical'             => 1,
+    'fields'                   => 'ids'
+  );
+  $wp_term = get_terms($args);
+  if (!is_wp_error($wp_term) && !empty($wp_term)) {
+    $term_id = $wp_term[0];
+  }
+
+  return $term_id;
+}
+
+/**
+ * Create the top level or child categories from a single string or an array of strings,
+ * if term exists then return the array of WP_Terms details
+ *
+ * @param string|array $term_names  The string or array of string names to create
+ * @param string $taxonomy          The raxonomy name to create terms under
+ * @param string $category_name     The string name if any, of the parent category to
+ *                                  add the $term_names to
+ * @return array                    Return an array of WP_Term instances, else empty
+ */
+function create_terms($term_names, $taxonomy, $category_name='') {
+  $product_terms = array();
+
+  if (empty($term_names)) {
+      return $product_terms;
+  }
+
+  if (!is_array($term_names)) {
+    $term_names = array($term_names);
+  }
+
+  // Check if we are required to assign terms to a parent category
+  $category_id = 0;
+  if (!empty($category_name)) {
+    $category_id = get_toplevel_id($category_name);
+  }
+
+  foreach($term_names as $term_name) {
+
+    // If term exists then return it, else create it
+    $temp = term_exists($term_name, $taxonomy, $category_id);
+    if (($temp === null || $temp === 0) || empty($temp)) {
+      $args = array();
+      $args['parent'] = $category_id;
+      $new_subterm = wp_insert_term($term_name, $taxonomy, $args);
+      if (!is_wp_error($new_subterm)) {
+        $product_terms[] = WP_Term::get_instance((int)$new_subterm['term_id'],
+                                                  $taxonomy);
+      }
+    }
+    else {
+      $product_terms[] = WP_Term::get_instance((int)$temp['term_id'], $taxonomy);
+    }
+  }
+
+  return $product_terms;
+}
+
+/**
+ * Load all the child terms names from the parent category ID associated with
+ * a product post
+ *
+ * @param int $post_id      The product post ID
+ * @param int $category_id  The term id of the toplevel category to filter
+ *                          the returned terms
+ * @return array            An array of strings of author names, else empty
+ */
+function get_book_terms_names_by_category($post_id, $category_id) {
+  $terms = [];
+
+  $post_terms = wp_get_post_terms($post_id, WC_CATEGORY_TAXN);
+  if (!is_wp_error($post_terms) && !empty($post_terms)) {
+    $terms = filter_terms_by_category($post_terms, $category_id, 'name');
+  }
+
+  return $terms;
+}
+
+/**
+ * Load all the child term IDs from the parent category name associated with
+ * a product post
+ *
+ * @param int $post_id      The product post ID
+ * @param int $category_id  The term id of the toplevel category to filter
+ *                          the returned terms
+ * @return array            An array of strings of author names, else empty
+ */
+function get_book_terms_ids_by_category($post_id, $category_id) {
+  $terms = [];
+
+  $post_terms = wp_get_post_terms($post_id, WC_CATEGORY_TAXN);
+  if (!is_wp_error($post_terms) && !empty($post_terms)) {
+    $terms = filter_term_by_category($post_terms, $category_id, 'id');
+  }
+
+  return $terms;
+}
+
+/**
+ * Given ALL terms for a post, filtered to retrieve the list of child term
+ * names whose category term name matches given
+ *
+ * @param array $post_terms         The set of WP_Term objects to c
+ * @param string $category_id       The product category ID to check the parent property
+ * @param string $term_field        The nameof the WP_Term attribute to return
+ * @return array                    The list term names whose parent matches the
+ * provided $category_id
+ */
+function filter_terms_by_category($post_terms, $category_id, $term_field) {
+
+  $filtered = array();
+
+  $terms = array();
+  if ($category_id !== 0) {
+    $terms = array_filter($post_terms, function($v) use ($category_id) {
+      $res = False;
+      if ($v->parent == $category_id) {
+        $res = True;
+      }
+      return $res;
+    });
+  }
+  else {
+    $terms = $post_terms;
+  }
+
+  $filtered = array_map(function($v) use ($term_field) {
+    return $v->$term_field;
+  }, $terms);
+
+  return $filtered;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// UI Helpers
+///////////////////////////////////////////////////////////////////////////////
 
 /**
  * Add column headers to the WooCommerce Product admin table
@@ -173,6 +326,10 @@ function add_book_columns_style() {
 	wp_add_inline_style('woocommerce_admin_styles', $css);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// ERROR Helpers
+///////////////////////////////////////////////////////////////////////////////
+
 /**
  * Add a informational message to the message stack
  *
@@ -228,6 +385,10 @@ function process_message(&$msgs, $notice, $notice_parms, $type='err') {
 		}
 	}
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// CONFIG Helpers
+///////////////////////////////////////////////////////////////////////////////
 
 /**
  * Encrypt a string using OpenSSL

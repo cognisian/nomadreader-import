@@ -94,8 +94,6 @@ class BookWordPressTest extends WP_UnitTestCase {
 
 	/**
 	 * Test a Book is loaded from WordPress with full data (ie with Authors, Tags etc)
-	 *
-	 * @group failing
 	 */
 	public function test_load_all_book_from_wordpress() {
 
@@ -174,6 +172,7 @@ class BookWordPressTest extends WP_UnitTestCase {
 
 	/**
 	 * Test a Book is inserted into WordPress
+	 * @group failing
 	 */
 	public function test_update_book_in_wordpress() {
 
@@ -185,8 +184,8 @@ class BookWordPressTest extends WP_UnitTestCase {
 						$this->test_excerpt);
 
 		// TEST Update the Book details with new values
-		$upd_book = Book::load_book($this->test_isbn);
-		$orig_book = clone $upd_book;
+		$orig_book = Book::load_book($this->test_isbn);
+		$upd_book = clone $orig_book;
 		$upd_book->title = $this->test_title_upd;
 		$upd_book->authors = $this->test_authors_upd;
 		$upd_book->summary = $this->test_summary;
@@ -234,7 +233,7 @@ class BookWordPressTest extends WP_UnitTestCase {
 	}
 
 	/**
-   * Test that importing books from file will create new product posts.
+   * Test that importing books from file will create or update new product posts.
 	 *
 	 * This should run in a separate process as the import will call
 	 * wp_redirect and die
@@ -300,10 +299,6 @@ class BookWordPressTest extends WP_UnitTestCase {
 											$book->genres);
 		$this->assertSame(array('Recent Releases'), $book->periods);
   }
-
-	//
-	// ASSERTS
-	//
 
 	//
 	// HELPERS
@@ -385,9 +380,10 @@ class BookWordPressTest extends WP_UnitTestCase {
 		$this->factory->cover->create($attach_args);
 
 		// Create fixture - comment items for Rating associated product post
-		$this->comment_id = $this->factory->comment->create(
-			array('comment_post_ID' => $this->post_id)
-		);
+		$this->comment_id = $this->factory->comment->create(array(
+			'comment_post_ID' => $this->post_id,
+			'user_id' => 1, // Admin user
+		));
 		add_comment_meta($this->comment_id, 'rating', $rating);
 		add_post_meta($this->post_id, '_wc_average_rating', $rating);
 	}
