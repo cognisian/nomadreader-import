@@ -230,10 +230,10 @@ function add_book_sortable_columns($columns){
 	return array(
 		// 'isbn' => 'isbn_prod', // CUSTOM
 		// 'name' => 'Name',
-		'authors' => 'authors',  // CUSTOM
-		'locations' => 'locations',  // CUSTOM
-		'genres' => 'genres',  // CUSTOM
-		'periods' => 'periods',
+		// 'authors' => 'authors',  // CUSTOM
+		// 'locations' => 'locations',  // CUSTOM
+		// 'genres' => 'genres',  // CUSTOM
+		// 'periods' => 'periods',
 		'rating' => 'rating',  // CUSTOM
 		'featured' => 'Featured',
 	);
@@ -291,28 +291,51 @@ function add_book_columns_content($column, $id){
 /**
  * How the columns should be sorted
  */
-function book_orderby($clauses, $query) {
+function book_orderby($query) {
 	global $wpdb;
 
   $orderby = $query->get('orderby');
 
-	if ('authors' === strtolower($orderby) || 'periods' === strtolower($orderby) ||
-      'genres' === strtolower($orderby) || 'location' === strtolower($orderby)) {
-
-		$id = get_toplevel_term($orderby);
-
-		$clauses['join'] .= "
-			LEFT OUTER JOIN {$wpdb->term_relationships} ON {$wpdb->posts}.ID={$wpdb->term_relationships}.object_id
-			LEFT OUTER JOIN {$wpdb->term_taxonomy} USING (term_taxonomy_id)
-			LEFT OUTER JOIN {$wpdb->terms} USING (term_id)";
-		$clauses['where'] .= " AND (parent = {$id})";
-		$clauses['groupby'] = "object_id";
-		$clauses['orderby'] = "GROUP_CONCAT({$wpdb->terms}.name ORDER BY name ASC) ";
-		$clauses['orderby'] .= ('ASC' == strtoupper($query->get('order'))) ? 'ASC' : 'DESC';
-	}
+	if ('rating' === strtolower($orderby)) {
+    $query->set('meta_key', '_wc_average_rating');
+    $query->set('meta_type', 'numeric');
+    $query->set('orderby', 'meta_value_num');
+    $query->set('order', $_GET['order']);
+  }
 
 	return $clauses;
 }
+
+/**
+ * How the columns should be sorted
+ */
+// function book_orderby($clauses, $query) {
+// 	global $wpdb;
+//
+//   $orderby = $query->get('orderby');
+//
+// 	if ('authors' === strtolower($orderby) || 'periods' === strtolower($orderby) ||
+//       'genres' === strtolower($orderby) || 'location' === strtolower($orderby)) {
+//
+// 		$id = get_toplevel_term($orderby);
+//
+// 		$clauses['join'] .= "
+// 			LEFT OUTER JOIN {$wpdb->term_relationships} ON {$wpdb->posts}.ID={$wpdb->term_relationships}.object_id
+// 			LEFT OUTER JOIN {$wpdb->term_taxonomy} USING (term_taxonomy_id)
+// 			LEFT OUTER JOIN {$wpdb->terms} USING (term_id)";
+// 		$clauses['where'] .= " AND (parent = {$id})";
+// 		$clauses['groupby'] = "object_id";
+// 		$clauses['orderby'] = "GROUP_CONCAT({$wpdb->terms}.name ORDER BY name ASC) ";
+// 		$clauses['orderby'] .= ('ASC' == strtoupper($query->get('order'))) ? 'ASC' : 'DESC';
+// 	}
+//   elseif ('rating' === strtolower($orderby)) {
+//     $query->set('orderby', 'meta_value');
+//     $query->set('meta_key', '_wc_average_rating');
+//     $query->set('meta_type', 'numeric');
+//   }
+//
+// 	return $clauses;
+// }
 
 /**
  * Tweak the Product Admin table CSS layout
