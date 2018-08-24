@@ -617,7 +617,7 @@ class Book {
       'post_id' => $parent_post,
       'user_id' => 1
     ));
-    var_dump($comment);
+    
     if (!empty($comment)) {
       update_comment_meta($comment[0]->comment_ID, 'rating', $this->rating, true);
       update_post_meta($parent_post, '_wc_average_rating', $this->rating);
