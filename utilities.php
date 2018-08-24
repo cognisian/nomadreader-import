@@ -254,8 +254,8 @@ function add_book_columns_content($column, $id){
 	elseif (strtolower($column) == 'authors' || strtolower($column) == 'genres' ||
       strtolower($column) == 'periods') {
 
-		$terms = wp_get_post_terms($id, WC_CATEGORY_TAXN, array('fields' => 'all'));
-    $names = Book::filter_terms_by_name($terms, $column);
+    $tl_term_id = get_toplevel_id(ucfirst($column));
+		$names = get_book_terms_names_by_category($id, $tl_term_id);
 		foreach($names as $name) {
 			echo '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
 					esc_html(sanitize_title($name)) . '&post_type=product')) . ' ">' .
@@ -265,8 +265,8 @@ function add_book_columns_content($column, $id){
 	elseif (strtolower($column) == 'location') {
 		$names_link = array();
 
-    $terms = wp_get_post_terms($id, WC_CATEGORY_TAXN, array('fields' => 'all'));
-		$names = array_chunk(Book::filter_terms_by_name($terms, $column), 2);
+    $tl_term_id = get_toplevel_id(ucfirst($column));
+		$names = array_chunk(get_book_terms_names_by_category($id, $tl_term_id), 2);
 		foreach($names as $name) {
 			$temp = '<a href="' . esc_url(admin_url('edit.php?product_cat=' .
 					sanitize_title(strtolower($name[0])) . '&post_type=product')) . ' ">' .

@@ -595,7 +595,7 @@ class Book {
       $comment_id = wp_new_comment($args, true);
       if (!is_wp_error($comment_id) && $comment_id > 0) {
         add_comment_meta($comment_id, 'rating', $this->rating, true);
-        // add_post_meta($parent_post, '_wc_average_rating', $this->rating);
+        update_post_meta($parent_post, '_wc_average_rating', $this->rating);
       }
     }
 
@@ -620,7 +620,7 @@ class Book {
     var_dump($comment);
     if (!empty($comment)) {
       update_comment_meta($comment[0]->comment_ID, 'rating', $this->rating, true);
-      // update_post_meta($parent_post, '_wc_average_rating', $this->rating);
+      update_post_meta($parent_post, '_wc_average_rating', $this->rating);
       $result = True;
     }
 
