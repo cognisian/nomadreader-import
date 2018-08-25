@@ -61,7 +61,8 @@ add_action('admin_post_remove_dups', 'remove_duplicate_books');
 add_filter('manage_edit-product_columns', 'add_book_columns', 10, 1);
 add_filter('manage_edit-product_sortable_columns', 'add_book_sortable_columns', 10, 1);
 add_filter('manage_product_posts_custom_column', 'add_book_columns_content', 10, 3);
-add_action('posts_clauses', 'book_orderby', 10, 2);
+add_action('pre_get_posts', 'book_orderby', 10, 1);
+// add_action('posts_clauses', 'book_orderby', 10, 2);
 add_action('admin_print_styles', 'add_book_columns_style');
 
 /**
