@@ -300,6 +300,38 @@ class BookWordPressTest extends WP_UnitTestCase {
 		$this->assertSame(array('Recent Releases'), $book->periods);
   }
 
+	/**
+	 * Test that exporting books will create the correct CSV file
+	 *
+	 * This should run in a separate process as the export will download the file
+	 *
+	 * @runInSeparateProcess
+	 */
+	public function test_export_books() {
+
+		// FIXTURE, create the initial products to export
+		$file = getcwd() . '/tests/data/test-books.csv';
+		$books = Book::parse_csv($file);
+		foreach($books as $book) {
+			$book->insert();
+		}
+
+		// Set the Exporting check to pass
+		$_POST['export_books_csv_submit'] = 'export_books_csv_submit';
+
+		// TEST Import the updates to books
+		$actual_csv = export_books();
+
+		// ASSERT That the file downloaded is equal to the test CSV
+		$expected_csv = '';
+		$test_csv = file($file);
+    foreach ($test_csv as $line) {
+      $expected_csv .= $line . "\n";
+    }
+
+		$this->assertSame($expected_csv, $actual_csv);
+	}
+
 	//
 	// HELPERS
 	//

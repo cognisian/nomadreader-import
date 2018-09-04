@@ -261,31 +261,33 @@ function export_books() {
 				$csv[] = sprintf($csv_rec, $tmp['isbn'], $tmp['title'], $tmp['authors'],
 													$tmp['summary'], $tmp['rating'], $tmp['location'],
 													$tmp['genres'], $tmp['periods'], $tmp['tags'], $tmp['cover']);
-
-				// Build complete CSV string
-				foreach($csv as $row) {
-					$result .= $row . "\n";
-				}
-
-				// Download It
-				header('Content-Description: Download NomadReader books');
-				header("Content-type: " . $file_mime);
-				header("Content-Disposition: attachment; filename=" . $file_name);
-				header("Pragma: no-cache");
-				header("Expires: 0");
-				ob_end_clean();
-				ob_start();
-					echo $result;
-				ob_end_flush();
 			}
 			else {
 					add_error($msgs, "Unable to locate Book for %s", array($isbn));
 			}
 		}
+
+		// Build complete CSV string
+		foreach($csv as $row) {
+			$result .= $row . "\n";
+		}
+
+		// Download It
+		header('Content-Description: Download NomadReader books');
+		header("Content-type: " . $file_mime);
+		header("Content-Disposition: attachment; filename=" . $file_name);
+		header("Pragma: no-cache");
+		header("Expires: 0");
+		ob_end_clean();
+		ob_start();
+			echo $result;
+		ob_end_flush();
 	}
 	else {
 		add_error($msgs, "Unable to locate any ISBNs");
 	}
+
+	return $result;
 }
 
 /**
